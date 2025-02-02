@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16
+    container_name: postgres_db
+    restart: always
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME}
+      POSTGRES_USER: ${DATABASE_USER}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_PORT: ${DATABASE_PORT}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER} -d ${DATABASE_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    container_name: django_web
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - ./static:/app/static
+      - ./media:/app/media
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             python manage.py runserver 0.0.0.0:8000"
+
+volumes:
+  postgres_data:

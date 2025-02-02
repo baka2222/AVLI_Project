@@ -29,7 +29,7 @@ def save_dbf_data_to_model():
             area=0,
             rate=0,
             address=record['ADDRESS'],
-            saldo=record['BALANCE'],
+            saldo=-record['BALANCE'],
             phone=record['PHONE']
         )
         user.save() 

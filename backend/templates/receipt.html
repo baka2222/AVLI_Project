@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body style="margin: 0;">
+    {% for i in receipts %}
+    <div class="container" style="border: 1px solid black;
+    width: 680px;
+    height: 525px;
+    position: relative;
+    page-break-inside: avoid;">
+        <span style="border: 1px solid black;
+        border-bottom: none;
+        position: relative;
+        top: 50px;
+        left: 30px;
+        padding-bottom: 8px;">
+            СЧЕТ-ИЗВЕЩЕНИЕ
+        </span>
+        <span style="font-size: 0.75rem;
+        position: relative;
+        top: 65px;
+        left: -115px;">
+            ОсОО "АВЛИ"
+        </span>
+        <span style="position: relative;
+        top: 37px;
+        left: -40px;
+        font-size: 1.1rem;">
+            {{ i.ls }}
+        </span>
+        <span style="position: relative;
+        top: 60px;
+        left: -120px;
+        font-size: 0.9rem;
+        width: 70px;">
+            {{ i.fio }}
+        </span>
+        <span style="position: absolute;
+        top: 37px;
+        left: 290px;
+        font-weight: bold;">
+            {{ i.date }}
+        </span>
+        <div style="position: relative;
+        top: 7px;
+        left: 415px;
+        overflow: hidden;
+        width: 230px;
+        /* border: 1px solid black; */
+        height: 70px;"><img style="position: relative;
+        width: 110%;
+        left: -14px;
+        top: -15px;"
+        src="{{ i.barcode }}" alt="Штрих-код"></div>
+        <table style="position: relative;
+        top: 20px;
+        left: 220px;
+        font-size: 0.8rem;
+        border-collapse: collapse;
+        text-align: center;">
+            <tr>
+                <td style="border: 1px solid black;
+                width: 60px;">Долг</td>
+                <td style="border: 1px solid black;
+                width: 60px;">Предопл.</td>
+                <td style="border: 1px solid black;
+                width: 60px;">Начислено</td>
+                <td style="border: 1px solid black;
+                width: 60px;">Оплачено</td>
+                <td style="border: 1px solid black;
+                width: 60px;">Долг</td>
+                <td style="border: 1px solid black;
+                width: 60px;">Предопл.</td>
+                <td style="border: 1px solid black;
+                width: 60px;">Льгота</td>
+            </tr>
+            <tr style="text-align: right;
+            font-weight: bold;">
+                <td style="width: 60px;">{{ i.last_dept }}</td>
+                <td style="width: 60px;">{{ i.last_prepayment }}</td>
+                <td style="width: 60px;">{{ i.rate_sum }}</td>
+                <td style="width: 60px;">{{ i.last_payment }}</td>
+                <td style="width: 60px;">{{ i.total }}</td>
+                <td style="width: 60px;">{{ i.current_prepayment }}</td>
+                <td style="width: 60px;">0.00</td>
+            </tr>
+        </table>
+        <span style="position: relative;
+        font-weight: bold;
+        top: 3px;
+        left: 80px;
+        font-size: 0.8rem;">Итого</span>
+        <hr style="position: relative;
+        top: -5px;
+        width: 180px;
+        left: -230px;">
+        <span style="position: relative;
+        font-size: 0.8rem;
+        top: -10px;
+        left: 30px;">
+            Сод.и рем.мест общ.поль-я
+        </span>
+        <span style="position: relative;
+        border: 1px solid black;
+        top: -10px;
+        left: 40px;
+        font-size: 0.8rem;
+        font-weight: bold;
+        padding: 3px 10px;">
+            {{ i.total }}
+        </span>
+        <p style="position: relative;
+        font-size: 0.8rem;
+        top: -10px;
+        left: 30px;">
+            К оплате <b style="padding-right: 100px;">{{ i.total }}</b>  НсП  <b style="padding-right: 100px;">0.00</b> Пени <b style="padding-right: 50px;">0.00</b> Итого к оплате: <b style="font-size: 1.3rem;">{{ i.total }}</b>
+        </p>
+        <p style="position: relative;
+        font-size: 0.75rem;
+        top: -10px;
+        left: 30px;">
+            <span style="padding-right: 40px;">1</span><span style="padding-right: 80px;">Участок 3</span><span style="padding-right: 10px;">______________________________________________________</span><span>13.02.2024 22:05:29</span>
+        </p>
+        <div style="position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        top: -6px;
+        left: -240px;">
+            <span style="border: 1px solid black;
+            border-bottom: none;">СЧЕТ-КВИТАНЦИЯ</span>
+            <span style="padding: 2px 35px;
+            border: 1px solid black;
+            font-weight: bold;
+            font-size: 1.6rem;">АВЛИ</span>
+        </div>
+        <span style="font-size: 0.75rem;
+        position: relative;
+        top: -10px;
+        left: 35px;">
+            ОсОО "АВЛИ"
+        </span>
+        <span style="font-size: 0.9rem;
+        position: relative;
+        top: -75px;
+        left: 120px;">
+            Расчет платежа за содержание и ремонт мест <br><span style="padding-left: 80px;">общего пользования жилого дома</span>
+        </span>
+        <span style="position: relative;
+        top: -55px;
+        left: -40px;
+        font-weight: bold;
+        font-size: 0.9rem;">
+            {{ i.date }}
+        </span>
+        <span style="position: relative;
+        top: -33px;
+        left: -140px;">
+            {{ i.ls }}
+        </span>
+        <span style="position: absolute;
+        font-size: 0.8rem;
+        top: 278px;
+        left: 390px;">
+            {{ i.address }}
+        </span>
+        <span style="position: absolute;
+        top: 297px;
+        left: 360px;">
+            {{ i.fio }}
+        </span>
+        <p style="position: relative;
+        top: -37px;
+        left: 30px;
+        font-size: 0.78rem;">
+            <span style="padding-right: 130px;">ул. Байтик баатыра 9а тел 54-45-72</span><span style="padding-right: 175px;"> </span><span>Общая площадь {{ i.area }}</span>
+        </p>
+        <table style="position: relative;
+        top: -50px;
+        left: 30px;
+        font-size: 0.8rem;
+        border-collapse: collapse;">
+            <tr>
+                <td style="border: 1px solid black;
+                padding: 15px 10px;
+                text-align: center;">Вид платежа</td>
+                <td style="border: 1px solid black;">Тариф</td>
+                <td style="border: 1px solid black;
+                position: relative;
+                padding: 0 10px;
+                top: -13px;">Долг</td>
+                <td style="border: 1px solid black;
+                position: relative;
+                padding: 0 10px;
+                top: -13px;">Предопл.</td>
+                <td style="border: 1px solid black;
+                padding: 0 4px;">Начислено</td>
+                <td style="border: 1px solid black;">Оплачено</td>
+                <td style="border: 1px solid black;
+                position: relative;
+                padding: 0 10px 0 19px;
+                top: -13px;">Долг</td>
+                <td style="border: 1px solid black;
+                position: relative;
+                padding: 0 10px;
+                top: -13px;">Предопл.</td>
+                <td style="border: 1px solid black;
+                padding: 0 10px;">Льгота</td>
+            </tr>
+            <tr>
+                <td style="text-align: right;">Сод.и рем.мест общ.поль-я</td>
+                <td style="text-align: right;">{{ i.rate }}</td>
+                <td style="text-align: right;">{{ i.last_dept }}</td>
+                <td style="text-align: right;">{{ i.last_prepayment }}</td>
+                <td style="text-align: right;">{{ i.rate_sum }}</td>
+                <td style="text-align: right;">{{ i.last_payment }}</td>
+                <td style="text-align: right;">{{ i.total }}</td>
+                <td style="text-align: right;">{{ i.current_prepayment }}</td>
+                <td style="text-align: right;">0.00</td>
+            </tr>
+        </table>
+        <span style="font-size: 0.8rem;
+        position: relative;
+        top: -90px;
+        left: 219px;
+        background-color: #fff;
+        border-top: 1px solid black;
+        padding-bottom: 5px;
+        display: block;
+        width: 117px;
+        text-align: center;">
+            {{ i.previous_date }}
+        </span>
+        <span style="font-size: 0.8rem;
+        position: relative; 
+        top: -110px;
+        left: 462px;
+        background-color: #fff;
+        border-top: 1px solid black;
+        padding-bottom: 5px;
+        display: block;
+        width: 124px;
+        text-align: center;">
+            {{ i.current_date }}
+        </span> 
+        <p style="position: relative;
+        top: -100px;
+        font-size: 0.9rem;
+        left: 70px;">
+            <b style="padding-right: 120px;">Итого</b><b style="padding-right: 45px;">{{ i.last_dept }}</b><b style="padding-right: 30px;">{{ i.last_prepayment }}</b><b style="padding-right: 30px;">{{ i.rate_sum }}</b><b style="padding-right: 40px;">{{ i.last_payment }}</b><b style="padding-right: 45px;">{{ i.total }}</b><b style="padding-right: 30px;">{{ i.current_prepayment }}</b><b>0.00</b>
+        </p>
+        <div style="position: relative;
+        border: 1px solid black;
+        width: 200px;
+        height: 50px;
+        top: -110px;
+        left: 30px;
+        display: flex;">
+            <div style="font-size: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-evenly;
+            position: relative;
+            left: 5px;">
+                <span>Оплачено</span><span>Субсидия</span><span>Льгота</span>
+            </div>
+            <div style="font-size: 0.8rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-evenly;
+            position: relative;
+            left: 120px;">
+                <span>0.00</span><span>0.00</span><span>0.00</span>
+            </div>
+        </div>
+        <div style="position: relative;
+        border: 1px solid black;
+        width: 230px;
+        height: 35px;
+        top: -162px;
+        left: 240px;
+        font-size: 0.78rem;
+        display: flex;
+        flex-direction: column;">
+            <p style="position: relative;
+            top: -12px;">
+                <span style="padding: 0 70px 0 10px;">К оплате</span><span style="padding-right: 45px;">НсП</span><span>Пени</span>
+            </p>
+            <p style="font-size: 0.87rem;
+            font-weight: bold;
+            position: relative;
+            top: -35px;">
+                <span style="padding: 0 60px 0 30px;">{{ i.total }}</span><span style="padding-right: 45px;">0.00</span><span>0.00</span>
+            </p>
+        </div>
+        <span style="font-size: 1.25rem;
+        position: relative;
+        top: -205px;
+        left: 490px">
+            Итого к оплате: <br>
+            <b style="padding-left: 30px;">{{ i.total }}</b>
+        </span>
+        <p style="position: relative;
+        top: -223px;
+        left: 245px;">
+            ПРИНЯТО к оплате _________________ владелец квартиры
+        </p>
+        <p style="position: relative;
+        top: -235px;
+        font-size: 0.87rem;
+        left: 20px;">
+            <b style="padding-right: 13px;">Внимание !</b><span>Оплата принимается во всех почтовых отделениях связи и Терминалах QuickPay г. Бишкек</span>
+        </p>
+    </div>
+    {% endfor %}
+</body>
+</html>

@@ -54,7 +54,7 @@ ROOT_URLCONF = 'backend.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR, 'templates')],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -70,6 +70,9 @@ TEMPLATES = [
 WSGI_APPLICATION = 'backend.wsgi.application'
 
 
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
@@ -83,6 +86,9 @@ DATABASES = {
         'PORT': env('DATABASE_PORT'),
     }
 }
+
+
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 100000
 
 MEDIA_URL = '/media/' 
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media') 
