@@ -1,0 +1,226 @@
+{% load static receipt_extras %}
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Проверка начислений и задолженности по лицевому счёту АВЛИ.">
+    <title>АВЛИ — информация по лицевому счёту</title>
+    <link rel="stylesheet" href="{% static 'public/site.css' %}">
+    <script src="{% static 'public/site.js' %}" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Перейти к содержимому</a>
+
+<header class="site-header">
+    <div class="shell header-inner">
+        <a class="brand" href="/" aria-label="АВЛИ — главная">
+            <span class="brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 32 32" role="img"><path d="M7 25V14.5L16 7l9 7.5V25h-6v-7h-6v7H7Z"/><path d="M4 15 16 5l12 10"/></svg>
+            </span>
+            <span><b>АВЛИ</b><small>Сервис для жильцов</small></span>
+        </a>
+        <nav class="header-actions" aria-label="Быстрые ссылки">
+            {% if telegram_bot_url %}
+            <a class="telegram-link" href="{{ telegram_bot_url }}" target="_blank" rel="noopener noreferrer">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20.7 3.4-3 16.1c-.2 1.1-.9 1.4-1.8.9l-4.6-3.4-2.2 2.1c-.2.2-.5.5-.9.5l.3-4.7 8.6-7.8c.4-.3-.1-.5-.6-.2L5.9 13.6l-4.6-1.4c-1-.3-1-1 .2-1.5L19.3 3.8c.8-.3 1.5.2 1.4-.4Z"/></svg>
+                Telegram-бот
+            </a>
+            {% endif %}
+            <span class="service-badge"><i aria-hidden="true"></i> Сервис работает</span>
+        </nav>
+    </div>
+</header>
+
+<main id="main">
+    <section class="hero">
+        <div class="hero-grid" aria-hidden="true"></div>
+        <div class="shell hero-layout">
+            <div class="hero-copy">
+                <div class="eyebrow"><span>Цифровая квитанция</span><i></i></div>
+                <h1>Вся информация по дому — <em>без ожидания</em></h1>
+                <p class="hero-text">Введите лицевой счёт и сразу увидите начисления, оплату, долг или предоплату за текущий период.</p>
+
+                <div class="trust-list" aria-label="Преимущества сервиса">
+                    <div class="trust-item">
+                        <span class="icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span>
+                        <span><b>Те же данные</b><small>что и в бумажной квитанции</small></span>
+                    </div>
+                    <div class="trust-item">
+                        <span class="icon-box" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+                        <span><b>Доступно всегда</b><small>с телефона или компьютера</small></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lookup-panel" id="lookup">
+                <div class="panel-number" aria-hidden="true">01</div>
+                <div class="panel-heading">
+                    <span class="panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16v12H4z"/><path d="M7 4h10v3M8 11h8M8 15h5"/></svg></span>
+                    <div>
+                        <h2>Найти лицевой счёт</h2>
+                        <p>Номер указан в верхней части квитанции</p>
+                    </div>
+                </div>
+
+                <form method="post" class="lookup-form" data-lookup-form novalidate>
+                    <label for="account-number">Лицевой счёт</label>
+                    <div class="input-wrap {% if error %}input-wrap--error{% endif %}">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>
+                        <input
+                            id="account-number"
+                            name="account_number"
+                            type="text"
+                            inputmode="numeric"
+                            autocomplete="off"
+                            maxlength="50"
+                            value="{{ submitted_account }}"
+                            placeholder="Например, 1517227-4"
+                            aria-describedby="account-help{% if error %} account-error{% endif %}"
+                            {% if error %}aria-invalid="true"{% endif %}
+                            required>
+                    </div>
+                    <p id="account-help" class="field-help">Можно вводить с дефисом или только цифры.</p>
+                    {% if error %}
+                    <div class="form-error" id="account-error" role="alert">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 17h.01"/></svg>
+                        <span>{{ error }}</span>
+                    </div>
+                    {% endif %}
+                    <button class="primary-button" type="submit">
+                        <span class="button-label" aria-live="polite">Показать информацию</span>
+                        <span class="button-loader" aria-hidden="true"></span>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M14 7l5 5-5 5"/></svg>
+                    </button>
+                </form>
+
+                <div class="privacy-note">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+                    <span>Информация открывается только после точного ввода номера.</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {% if account %}
+    <section class="result-section" id="account-result" tabindex="-1" data-account-result>
+        <div class="shell">
+            <div class="result-toolbar">
+                <div>
+                    <span class="section-kicker">Результат запроса</span>
+                    <h2>Информация по лицевому счёту</h2>
+                </div>
+                <button type="button" class="secondary-button" data-print-button>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V4h10v5M7 18H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M7 14h10v6H7z"/></svg>
+                    Распечатать
+                </button>
+            </div>
+
+            <article class="account-card">
+                <header class="account-head">
+                    <div class="account-brand">
+                        <span class="mini-mark" aria-hidden="true">А</span>
+                        <div><b>{{ account.company }}</b><small>Электронная квитанция</small></div>
+                    </div>
+                    <div class="account-period"><span>Расчётный период</span><b>{{ account.period }}</b></div>
+                </header>
+
+                <div class="account-summary">
+                    <div class="resident-data">
+                        <span class="data-label">Лицевой счёт</span>
+                        <strong class="account-number">{{ account.account_number }}</strong>
+                        <dl>
+                            <div><dt>Плательщик</dt><dd>{{ account.full_name }}</dd></div>
+                            <div><dt>Адрес</dt><dd>{{ account.address }}</dd></div>
+                            <div><dt>Общая площадь</dt><dd>{{ account.area|num }} м²</dd></div>
+                            <div><dt>Тариф</dt><dd>{{ account.rate|num }} сом / м²</dd></div>
+                        </dl>
+                    </div>
+
+                    <div class="amount-card amount-card--{{ account.balance_status }}">
+                        <div class="amount-status"><i aria-hidden="true"></i>{{ account.balance_label }}</div>
+                        <span>Итого к оплате</span>
+                        <strong>{{ account.total_due|money }} <small>сом</small></strong>
+                        {% if account.closing_prepayment > 0 %}
+                        <p>Предоплата: <b>{{ account.closing_prepayment|money }} сом</b></p>
+                        {% else %}
+                        <p>По состоянию {{ account.current_date|lower }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <section class="charges" aria-labelledby="charges-title">
+                    <div class="charges-title-row">
+                        <h3 id="charges-title">Расчёт за период</h3>
+                        <span>Содержание и ремонт мест общего пользования</span>
+                    </div>
+                    <div class="charge-grid">
+                        <div class="charge-cell">
+                            <span>Долг на начало</span>
+                            <b>{{ account.opening_debt|money }}</b>
+                            <small>{{ account.previous_date }}</small>
+                        </div>
+                        <div class="charge-cell">
+                            <span>Предоплата</span>
+                            <b>{{ account.opening_prepayment|money }}</b>
+                            <small>{{ account.previous_date }}</small>
+                        </div>
+                        <div class="charge-cell charge-cell--accent">
+                            <span>Начислено</span>
+                            <b>{{ account.charged|money }}</b>
+                            <small>за текущий период</small>
+                        </div>
+                        <div class="charge-cell charge-cell--paid">
+                            <span>Оплачено</span>
+                            <b>{{ account.paid|money }}</b>
+                            <small>за текущий период</small>
+                        </div>
+                        <div class="charge-cell">
+                            <span>Долг на конец</span>
+                            <b>{{ account.closing_debt|money }}</b>
+                            <small>{{ account.current_date }}</small>
+                        </div>
+                        <div class="charge-cell">
+                            <span>Предоплата</span>
+                            <b>{{ account.closing_prepayment|money }}</b>
+                            <small>{{ account.current_date }}</small>
+                        </div>
+                    </div>
+                </section>
+
+                <footer class="account-foot">
+                    <div class="calculation-note">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v6M12 7h.01"/></svg>
+                        <span>Льгота, НсП и пеня: <b>{{ account.benefit|money }} сом</b>. Данные сформированы {{ account.generated_at }}.</span>
+                    </div>
+                    <div class="account-total"><span>К оплате</span><b>{{ account.total_due|money }} сом</b></div>
+                </footer>
+            </article>
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="how-it-works" aria-labelledby="how-title">
+        <div class="shell">
+            <div class="how-heading">
+                <span class="section-kicker">Просто и быстро</span>
+                <h2 id="how-title">Квитанция за три шага</h2>
+            </div>
+            <ol class="steps">
+                <li><span>01</span><div><b>Найдите номер</b><p>Посмотрите лицевой счёт на старой квитанции.</p></div></li>
+                <li><span>02</span><div><b>Введите на сайте</b><p>Дефис необязателен — нужны только цифры.</p></div></li>
+                <li><span>03</span><div><b>Получите данные</b><p>Проверьте начисления, оплату и текущий баланс.</p></div></li>
+            </ol>
+        </div>
+    </section>
+</main>
+
+<footer class="site-footer">
+    <div class="shell footer-inner">
+        <div class="footer-brand"><b>АВЛИ</b><span>Содержание и ремонт общего имущества</span></div>
+        <address>ул. Байтик баатыра, 9а&nbsp;&nbsp;·&nbsp;&nbsp;тел. 54-45-72</address>
+        <span>© {% now "Y" %} ОсОО «АВЛИ»</span>
+    </div>
+</footer>
+</body>
+</html>

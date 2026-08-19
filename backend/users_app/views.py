@@ -1,12 +1,26 @@
 from datetime import datetime
+import json
+import secrets
 
+from django.conf import settings
+from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db.models import Q
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import render
 from django.urls import reverse
+from django.views.decorators.cache import never_cache
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from . import receipts as receipts_lib
 from .models import UserModel
+from .public_accounts import (
+    AccountNotFound,
+    InvalidAccountNumber,
+    build_public_account,
+    find_account,
+)
 
 
 # Листов A4 на одну страницу превью. 25 листов = 100 квитанций — страница
@@ -16,6 +30,107 @@ SHEETS_PER_PAGE = 25
 # Ключ сессии, через который админка передаёт сюда выделенных абонентов:
 # в GET-параметры 4000 идентификаторов не помещаются.
 SELECTION_KEY = "receipt_selection"
+
+
+def _is_rate_limited(request, limit=20, window=60):
+    """Простой лимит на подбор лицевых счетов в одном процессе Django.
+
+    В production он работает вторым слоем после nginx. X-Forwarded-For здесь
+    намеренно не читается: этот заголовок клиент может подделать.
+    """
+    # nginx полностью перезаписывает X-Real-IP, а сам Django наружу не опубликован.
+    address = request.META.get("HTTP_X_REAL_IP") or request.META.get("REMOTE_ADDR", "unknown")
+    bucket = int(datetime.now().timestamp() // window)
+    key = f"account-lookup:{address}:{bucket}"
+    if cache.add(key, 1, timeout=window + 5):
+        return False
+    try:
+        return cache.incr(key) > limit
+    except ValueError:
+        cache.set(key, 1, timeout=window + 5)
+        return False
+
+
+def _lookup_error_message(exc):
+    if isinstance(exc, InvalidAccountNumber):
+        return str(exc)
+    return "Лицевой счёт не найден. Проверьте номер и попробуйте ещё раз."
+
+
+@never_cache
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def home(request):
+    """Публичная страница: точный поиск и цифровая версия квитанции."""
+    account = None
+    error = ""
+    submitted_account = ""
+
+    if request.method == "POST":
+        submitted_account = (request.POST.get("account_number") or "").strip()
+        if _is_rate_limited(request):
+            error = "Слишком много запросов. Подождите минуту и повторите попытку."
+        else:
+            try:
+                account = build_public_account(find_account(submitted_account))
+            except (InvalidAccountNumber, AccountNotFound) as exc:
+                error = _lookup_error_message(exc)
+
+    bot_username = settings.TELEGRAM_BOT_USERNAME.lstrip("@")
+    response = render(request, "public/home.html", {
+        "account": account,
+        "error": error,
+        "submitted_account": submitted_account,
+        "telegram_bot_url": f"https://t.me/{bot_username}" if bot_username else "",
+    })
+    response["Cache-Control"] = "no-store, private"
+    return response
+
+
+@csrf_exempt
+@never_cache
+@require_POST
+def account_lookup_api(request):
+    """Внутренний JSON API, которым пользуется Telegram-бот."""
+    expected_token = settings.INTERNAL_API_TOKEN
+    if not expected_token and not settings.DEBUG:
+        return JsonResponse({"ok": False, "error": "api_not_configured"}, status=503)
+    supplied_token = request.headers.get("X-AVLI-API-Key", "")
+    authenticated = bool(
+        expected_token and secrets.compare_digest(supplied_token, expected_token)
+    )
+    if expected_token and not authenticated:
+        return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
+
+    if not authenticated and _is_rate_limited(request, limit=60):
+        return JsonResponse({"ok": False, "error": "rate_limited"}, status=429)
+
+    try:
+        try:
+            content_length = int(request.META.get("CONTENT_LENGTH") or 0)
+        except (TypeError, ValueError):
+            content_length = 0
+        if content_length > 2048:
+            raise InvalidAccountNumber("Слишком длинный запрос.")
+        payload = json.loads(request.body or b"{}")
+        if not isinstance(payload, dict):
+            raise InvalidAccountNumber("Ожидается объект с номером лицевого счёта.")
+        user = find_account(payload.get("account_number"))
+    except json.JSONDecodeError:
+        return JsonResponse({"ok": False, "error": "invalid_json"}, status=400)
+    except InvalidAccountNumber as exc:
+        return JsonResponse({"ok": False, "error": "invalid_account", "message": str(exc)}, status=400)
+    except AccountNotFound:
+        return JsonResponse({"ok": False, "error": "not_found"}, status=404)
+
+    response = JsonResponse({"ok": True, "account": build_public_account(user)})
+    response["Cache-Control"] = "no-store, private"
+    return response
+
+
+@require_GET
+def healthcheck(request):
+    return JsonResponse({"status": "ok"})
 
 
 def get_print_queryset(request):

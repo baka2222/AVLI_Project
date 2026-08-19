@@ -6,6 +6,10 @@
 в котором цифры не сходятся между собой.
 """
 
+import os
+from unittest import SkipTest
+
+from django.conf import settings
 from django.test import TestCase
 
 from users_app.models import UserModel, PaymentModel, normalize_payment_date
@@ -244,6 +248,19 @@ class BankImportTest(TestCase):
         "quickpay": ("files/quickpay.csv", ["1515212-5"]),
         "umai":     ("files/umai.xlsx",    ["1517355-6"]),
     }
+
+    @classmethod
+    def setUpClass(cls):
+        missing = [
+            path for path, _ in cls.FILES.values()
+            if not os.path.exists(os.path.join(settings.BASE_DIR, path))
+        ]
+        if missing:
+            raise SkipTest(
+                "Тестовые банковские реестры не входят в репозиторий: "
+                + ", ".join(missing)
+            )
+        super().setUpClass()
 
     def setUp(self):
         from django.contrib.auth.models import User
