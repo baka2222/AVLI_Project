@@ -1,321 +1,273 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-</head>
-<body style="margin: 0;">
-    {% for i in receipts %}
-    <div class="container" style="border: 1px solid black;
-    width: 680px;
-    height: 525px;
-    position: relative;
-    page-break-inside: avoid;">
-        <span style="border: 1px solid black;
-        border-bottom: none;
-        position: relative;
-        top: 50px;
-        left: 30px;
-        padding-bottom: 8px;">
-            СЧЕТ-ИЗВЕЩЕНИЕ
-        </span>
-        <span style="font-size: 0.75rem;
-        position: relative;
-        top: 65px;
-        left: -115px;">
-            ОсОО "АВЛИ"
-        </span>
-        <span style="position: relative;
-        top: 37px;
-        left: -40px;
-        font-size: 1.1rem;">
-            {{ i.ls }}
-        </span>
-        <span style="position: relative;
-        top: 60px;
-        left: -120px;
-        font-size: 0.9rem;
-        width: 70px;">
-            {{ i.fio }}
-        </span>
-        <span style="position: absolute;
-        top: 37px;
-        left: 290px;
-        font-weight: bold;">
-            {{ i.date }}
-        </span>
-        <div style="position: relative;
-        top: 7px;
-        left: 415px;
-        overflow: hidden;
-        width: 230px;
-        /* border: 1px solid black; */
-        height: 70px;"><img style="position: relative;
-        width: 110%;
-        left: -14px;
-        top: -15px;"
-        src="{{ i.barcode }}" alt="Штрих-код"></div>
-        <table style="position: relative;
-        top: 20px;
-        left: 220px;
-        font-size: 0.8rem;
-        border-collapse: collapse;
-        text-align: center;">
-            <tr>
-                <td style="border: 1px solid black;
-                width: 60px;">Долг</td>
-                <td style="border: 1px solid black;
-                width: 60px;">Предопл.</td>
-                <td style="border: 1px solid black;
-                width: 60px;">Начислено</td>
-                <td style="border: 1px solid black;
-                width: 60px;">Оплачено</td>
-                <td style="border: 1px solid black;
-                width: 60px;">Долг</td>
-                <td style="border: 1px solid black;
-                width: 60px;">Предопл.</td>
-                <td style="border: 1px solid black;
-                width: 60px;">Льгота</td>
-            </tr>
-            <tr style="text-align: right;
-            font-weight: bold;">
-                <td style="width: 60px;">{{ i.last_dept }}</td>
-                <td style="width: 60px;">{{ i.last_prepayment }}</td>
-                <td style="width: 60px;">{{ i.rate_sum }}</td>
-                <td style="width: 60px;">{{ i.last_payment }}</td>
-                <td style="width: 60px;">{{ i.total }}</td>
-                <td style="width: 60px;">{{ i.current_prepayment }}</td>
-                <td style="width: 60px;">0.00</td>
-            </tr>
-        </table>
-        <span style="position: relative;
-        font-weight: bold;
-        top: 3px;
-        left: 80px;
-        font-size: 0.8rem;">Итого</span>
-        <hr style="position: relative;
-        top: -5px;
-        width: 180px;
-        left: -230px;">
-        <span style="position: relative;
-        font-size: 0.8rem;
-        top: -10px;
-        left: 30px;">
-            Сод.и рем.мест общ.поль-я
-        </span>
-        <span style="position: relative;
-        border: 1px solid black;
-        top: -10px;
-        left: 40px;
-        font-size: 0.8rem;
-        font-weight: bold;
-        padding: 3px 10px;">
-            {{ i.total }}
-        </span>
-        <p style="position: relative;
-        font-size: 0.8rem;
-        top: -10px;
-        left: 30px;">
-            К оплате <b style="padding-right: 100px;">{{ i.total }}</b>  НсП  <b style="padding-right: 100px;">0.00</b> Пени <b style="padding-right: 50px;">0.00</b> Итого к оплате: <b style="font-size: 1.3rem;">{{ i.total }}</b>
-        </p>
-        <p style="position: relative;
-        font-size: 0.75rem;
-        top: -10px;
-        left: 30px;">
-            <span style="padding-right: 40px;">1</span><span style="padding-right: 80px;">Участок 3</span><span style="padding-right: 10px;">______________________________________________________</span><span>13.02.2024 22:05:29</span>
-        </p>
-        <div style="position: relative;
+<meta charset="UTF-8">
+<title>Квитанции{% if period %} — {{ period }}{% endif %}</title>
+<style>
+/* ------------------------------------------------------------------
+   Лист A4, альбомная ориентация: сетка 2x2, четыре квитанции на лист.
+   Поле 5mm гарантированно попадает внутрь непечатаемой зоны любого
+   принтера, поэтому раскладка одинакова и в PDF, и при печати из браузера.
+   ------------------------------------------------------------------ */
+@page { size: A4 landscape; margin: 5mm; }
+
+:root {
+    --sheet-w: 287mm;   /* 297 - 2*5 */
+    --sheet-h: 200mm;   /* 210 - 2*5 */
+    --cell-w: 143.5mm;
+    --cell-h: 100mm;
+    --ink: #000;
+    --hair: 0.2mm solid var(--ink);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    color: var(--ink);
+    font-family: "Times New Roman", "Liberation Serif", "DejaVu Serif", Times, serif;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}
+
+/* Разрыв страницы — на простом блоке, раскладка листа — на таблице.
+   CSS Grid в WeasyPrint пока экспериментальный, а таблицы оба движка
+   раскладывают одинаково и предсказуемо. */
+.sheet {
+    width: var(--sheet-w);
+    height: var(--sheet-h);
+    page-break-after: always;
+    break-after: page;
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+.sheet:last-of-type { page-break-after: auto; break-after: auto; }
+
+.sheet-grid {
+    width: var(--sheet-w);
+    height: var(--sheet-h);
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+/* Класс `cell` обязателен: селектор по тегу зацепил бы и ячейки таблиц
+   внутри самих квитанций. */
+.sheet-grid td.cell {
+    width: var(--cell-w);
+    height: var(--cell-h);
+    padding: 0;
+    vertical-align: top;
+}
+
+/* ------------------------------- квитанция -------------------------------
+   Раскладка строится на таблицах, а не на flex/grid: WeasyPrint (генерация
+   PDF) реализует flexbox лишь частично — не поддерживает `gap` и `margin:auto`
+   у флекс-элементов, из-за чего соседние поля слипались в одну строку.
+   Таблицы обрабатываются обоими движками одинаково.
+   ------------------------------------------------------------------------- */
+
+.receipt {
+    width: var(--cell-w);
+    height: var(--cell-h);
+    padding: 2.2mm 2.6mm;
+    border: var(--hair);           /* линия реза */
+    overflow: hidden;
+    font-size: 7pt;
+    line-height: 1.15;
+}
+.receipt--blank { border-style: dashed; border-color: #bbb; }
+
+/* Все таблицы раскладки: фиксированные колонки, чтобы длинный текст никогда
+   не менял ширину столбцов и не наезжал на соседей. */
+.receipt table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+.receipt td { padding: 0; vertical-align: middle; }
+
+.right { text-align: right; }
+.pad-l { padding-left: 2mm; }
+
+/* Обрезаем длинные ФИО и адреса вместо переноса: строка обязана остаться
+   одной, иначе поедет вся нижняя часть квитанции. */
+.clip {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* --- общие элементы шапок --- */
+
+.stamp-box {
+    display: block;
+    border: var(--hair);
+    border-bottom: none;
+    padding: 0.6mm 1mm 0.9mm;
+    text-align: center;
+    white-space: nowrap;
+}
+.stamp-box--closed { border-bottom: var(--hair); }
+
+.org { font-size: 0.85em; vertical-align: top; }
+.ls { font-size: 1.2em; white-space: nowrap; }
+.period { font-weight: bold; white-space: nowrap; }
+.fio { font-size: 1.05em; }
+
+.head--notice .ls { padding-right: 4mm; }
+.head--notice td { vertical-align: bottom; }
+.head--notice td.bc-cell { vertical-align: top; padding-left: 2mm; }
+.bc-cell .bc { display: block; width: 100%; height: 10mm; }
+
+.pair td { vertical-align: baseline; }
+
+/* --- таблицы сумм --- */
+
+.grid { text-align: center; }
+.grid .th td {
+    border: var(--hair);
+    padding: 0.4mm 0.2mm;
+    vertical-align: middle;
+}
+.grid .tv td {
+    padding: 0.5mm 0.6mm 0;
+    text-align: right;
+    white-space: nowrap;
+}
+/* Три класса — чтобы перебить `.grid .th td` (два класса + тег). */
+.grid .th .c-label { border: none; }
+.grid .tv .c-total { text-align: center; font-weight: bold; }
+
+.grid--notice { margin-top: 1.2mm; }
+.grid--notice .tv td { font-weight: bold; }
+.grid--notice .tv .c-total { border-bottom: var(--hair); }
+
+.grid--bill { margin-top: 1.2mm; }
+.grid--bill .th .c-label { border: var(--hair); }
+.grid--bill .tv--total td { font-weight: bold; }
+
+/* --- строки счёта-извещения --- */
+
+.line { margin-top: 1.1mm; }
+.line--service .service-sum {
+    display: inline-block;
+    border: var(--hair);
+    padding: 0.4mm 2.5mm;
+    font-weight: bold;
+    min-width: 16mm;
+    text-align: center;
+}
+.line--pay .big { font-size: 1.5em; }
+.line--meta { font-size: 0.9em; }
+.line--meta td { white-space: nowrap; }
+.line--meta .fill { border-bottom: var(--hair); }
+.line--contacts { font-size: 0.95em; }
+
+/* --- линия реза между извещением и квитанцией --- */
+
+.cut { border-top: 0.2mm dashed #666; margin: 1.2mm 0; }
+
+/* --- счёт-квитанция --- */
+
+.brand {
+    display: block;
+    border: var(--hair);
+    border-top: none;
+    text-align: center;
+    font-weight: bold;
+    font-size: 1.9em;
+    line-height: 1.15;
+}
+.title { font-size: 1.05em; text-align: center; vertical-align: middle; }
+
+/* --- нижний блок квитанции --- */
+
+.foot { margin-top: 1.2mm; }
+/* Отбивка между блоками задаётся padding'ом ячейки: вложенные таблицы
+   тянутся на всю ширину колонки, поэтому зазор надо оставить снаружи. */
+.foot td { vertical-align: top; padding-right: 3mm; }
+.foot td.grand { padding-right: 0; }
+
+.box { border: var(--hair); }
+.box td { padding: 0.4mm 1.2mm; white-space: nowrap; }
+.box--due { text-align: center; }
+.box--due td { border: var(--hair); }
+.box--due .tv td { font-weight: bold; font-size: 1.1em; }
+
+.grand { text-align: center; font-size: 1.35em; line-height: 1.3; }
+.grand b { font-size: 1.15em; }
+
+.accept { margin-top: 1.1mm; }
+.sign { display: inline-block; width: 26mm; border-bottom: var(--hair); }
+
+.notice-text { margin-top: 0.9mm; font-size: 0.95em; }
+
+/* ------------------------------ экран ------------------------------ */
+
+@media screen {
+    body { background: #6b6b6b; padding-bottom: 10mm; }
+    .sheet {
+        background: #fff;
+        margin: 6mm auto;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, .45);
+    }
+    .toolbar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
         display: flex;
-        flex-direction: column;
+        flex-wrap: wrap;
         align-items: center;
-        top: -6px;
-        left: -240px;">
-            <span style="border: 1px solid black;
-            border-bottom: none;">СЧЕТ-КВИТАНЦИЯ</span>
-            <span style="padding: 2px 35px;
-            border: 1px solid black;
-            font-weight: bold;
-            font-size: 1.6rem;">АВЛИ</span>
-        </div>
-        <span style="font-size: 0.75rem;
-        position: relative;
-        top: -10px;
-        left: 35px;">
-            ОсОО "АВЛИ"
-        </span>
-        <span style="font-size: 0.9rem;
-        position: relative;
-        top: -75px;
-        left: 120px;">
-            Расчет платежа за содержание и ремонт мест <br><span style="padding-left: 80px;">общего пользования жилого дома</span>
-        </span>
-        <span style="position: relative;
-        top: -55px;
-        left: -40px;
-        font-weight: bold;
-        font-size: 0.9rem;">
-            {{ i.date }}
-        </span>
-        <span style="position: relative;
-        top: -33px;
-        left: -140px;">
-            {{ i.ls }}
-        </span>
-        <span style="position: absolute;
-        font-size: 0.8rem;
-        top: 278px;
-        left: 390px;">
-            {{ i.address }}
-        </span>
-        <span style="position: absolute;
-        top: 297px;
-        left: 360px;">
-            {{ i.fio }}
-        </span>
-        <p style="position: relative;
-        top: -37px;
-        left: 30px;
-        font-size: 0.78rem;">
-            <span style="padding-right: 130px;">ул. Байтик баатыра 9а тел 54-45-72</span><span style="padding-right: 175px;"> </span><span>Общая площадь {{ i.area }}</span>
-        </p>
-        <table style="position: relative;
-        top: -50px;
-        left: 30px;
-        font-size: 0.8rem;
-        border-collapse: collapse;">
-            <tr>
-                <td style="border: 1px solid black;
-                padding: 15px 10px;
-                text-align: center;">Вид платежа</td>
-                <td style="border: 1px solid black;">Тариф</td>
-                <td style="border: 1px solid black;
-                position: relative;
-                padding: 0 10px;
-                top: -13px;">Долг</td>
-                <td style="border: 1px solid black;
-                position: relative;
-                padding: 0 10px;
-                top: -13px;">Предопл.</td>
-                <td style="border: 1px solid black;
-                padding: 0 4px;">Начислено</td>
-                <td style="border: 1px solid black;">Оплачено</td>
-                <td style="border: 1px solid black;
-                position: relative;
-                padding: 0 10px 0 19px;
-                top: -13px;">Долг</td>
-                <td style="border: 1px solid black;
-                position: relative;
-                padding: 0 10px;
-                top: -13px;">Предопл.</td>
-                <td style="border: 1px solid black;
-                padding: 0 10px;">Льгота</td>
-            </tr>
-            <tr>
-                <td style="text-align: right;">Сод.и рем.мест общ.поль-я</td>
-                <td style="text-align: right;">{{ i.rate }}</td>
-                <td style="text-align: right;">{{ i.last_dept }}</td>
-                <td style="text-align: right;">{{ i.last_prepayment }}</td>
-                <td style="text-align: right;">{{ i.rate_sum }}</td>
-                <td style="text-align: right;">{{ i.last_payment }}</td>
-                <td style="text-align: right;">{{ i.total }}</td>
-                <td style="text-align: right;">{{ i.current_prepayment }}</td>
-                <td style="text-align: right;">0.00</td>
-            </tr>
-        </table>
-        <span style="font-size: 0.8rem;
-        position: relative;
-        top: -90px;
-        left: 219px;
-        background-color: #fff;
-        border-top: 1px solid black;
-        padding-bottom: 5px;
-        display: block;
-        width: 117px;
-        text-align: center;">
-            {{ i.previous_date }}
-        </span>
-        <span style="font-size: 0.8rem;
-        position: relative; 
-        top: -110px;
-        left: 462px;
-        background-color: #fff;
-        border-top: 1px solid black;
-        padding-bottom: 5px;
-        display: block;
-        width: 124px;
-        text-align: center;">
-            {{ i.current_date }}
-        </span> 
-        <p style="position: relative;
-        top: -100px;
-        font-size: 0.9rem;
-        left: 70px;">
-            <b style="padding-right: 120px;">Итого</b><b style="padding-right: 45px;">{{ i.last_dept }}</b><b style="padding-right: 30px;">{{ i.last_prepayment }}</b><b style="padding-right: 30px;">{{ i.rate_sum }}</b><b style="padding-right: 40px;">{{ i.last_payment }}</b><b style="padding-right: 45px;">{{ i.total }}</b><b style="padding-right: 30px;">{{ i.current_prepayment }}</b><b>0.00</b>
-        </p>
-        <div style="position: relative;
-        border: 1px solid black;
-        width: 200px;
-        height: 50px;
-        top: -110px;
-        left: 30px;
-        display: flex;">
-            <div style="font-size: 0.8rem;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-evenly;
-            position: relative;
-            left: 5px;">
-                <span>Оплачено</span><span>Субсидия</span><span>Льгота</span>
-            </div>
-            <div style="font-size: 0.8rem;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-evenly;
-            position: relative;
-            left: 120px;">
-                <span>0.00</span><span>0.00</span><span>0.00</span>
-            </div>
-        </div>
-        <div style="position: relative;
-        border: 1px solid black;
-        width: 230px;
-        height: 35px;
-        top: -162px;
-        left: 240px;
-        font-size: 0.78rem;
-        display: flex;
-        flex-direction: column;">
-            <p style="position: relative;
-            top: -12px;">
-                <span style="padding: 0 70px 0 10px;">К оплате</span><span style="padding-right: 45px;">НсП</span><span>Пени</span>
-            </p>
-            <p style="font-size: 0.87rem;
-            font-weight: bold;
-            position: relative;
-            top: -35px;">
-                <span style="padding: 0 60px 0 30px;">{{ i.total }}</span><span style="padding-right: 45px;">0.00</span><span>0.00</span>
-            </p>
-        </div>
-        <span style="font-size: 1.25rem;
-        position: relative;
-        top: -205px;
-        left: 490px">
-            Итого к оплате: <br>
-            <b style="padding-left: 30px;">{{ i.total }}</b>
-        </span>
-        <p style="position: relative;
-        top: -223px;
-        left: 245px;">
-            ПРИНЯТО к оплате _________________ владелец квартиры
-        </p>
-        <p style="position: relative;
-        top: -235px;
-        font-size: 0.87rem;
-        left: 20px;">
-            <b style="padding-right: 13px;">Внимание !</b><span>Оплата принимается во всех почтовых отделениях связи и Терминалах QuickPay г. Бишкек</span>
-        </p>
-    </div>
-    {% endfor %}
+        gap: 10px;
+        padding: 10px 16px;
+        background: #1f2430;
+        color: #e8e8e8;
+        font: 14px/1.4 system-ui, "Segoe UI", sans-serif;
+    }
+    .toolbar a, .toolbar button {
+        padding: 6px 12px;
+        border: 1px solid #4a5262;
+        border-radius: 4px;
+        background: #2c3342;
+        color: #e8e8e8;
+        font: inherit;
+        text-decoration: none;
+        cursor: pointer;
+    }
+    .toolbar a:hover, .toolbar button:hover { background: #3a4256; }
+    .toolbar .primary { background: #3d6be0; border-color: #3d6be0; }
+    .toolbar .spacer { flex: 1; }
+    .toolbar .hint { color: #a8b0c0; font-size: 12px; }
+    .toolbar [aria-disabled="true"] { opacity: .4; pointer-events: none; }
+}
+@media print {
+    .toolbar { display: none; }
+}
+</style>
+</head>
+<body>
+
+{% if not pdf %}
+<div class="toolbar">
+    <button type="button" onclick="window.print()" class="primary">Печать</button>
+    {% if pdf_url %}<a href="{{ pdf_url }}">Скачать PDF</a>{% endif %}
+    <span>{{ total_count }} квитанц. &middot; лист {{ page_number }} из {{ num_pages }}</span>
+    <a href="?{{ prev_query }}"{% if not has_prev %} aria-disabled="true"{% endif %}>&larr; Пред.</a>
+    <a href="?{{ next_query }}"{% if not has_next %} aria-disabled="true"{% endif %}>След. &rarr;</a>
+    <span class="spacer"></span>
+    <span class="hint">В диалоге печати: A4, альбомная, масштаб 100%, поля «по умолчанию».</span>
+</div>
+{% endif %}
+
+{% for sheet in sheets %}
+<div class="sheet"><table class="sheet-grid">
+    {% for row in sheet %}<tr>
+        {% for r in row %}<td class="cell">{% if r %}{% include "receipt_card.html" %}{% else %}<div class="receipt receipt--blank"></div>{% endif %}</td>{% endfor %}
+    </tr>{% endfor %}
+</table></div>
+{% endfor %}
+
 </body>
 </html>

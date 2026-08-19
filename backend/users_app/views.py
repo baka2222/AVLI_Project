@@ -1,37 +1,95 @@
-from django.shortcuts import render
-from .models import UserModel
 from datetime import datetime
 
+from django.core.paginator import Paginator
+from django.db.models import Q
+from django.http import HttpResponse
+from django.urls import reverse
 
-months = {
-    1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
-    5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
-    9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь"
-}
+from . import receipts as receipts_lib
+from .models import UserModel
 
 
-def get_previous_month(date):
-    previous_month = date.month - 1 if date.month > 1 else 12
-    year = date.year if date.month > 1 else date.year - 1
-    return previous_month, year
+# Листов A4 на одну страницу превью. 25 листов = 100 квитанций — страница
+# открывается мгновенно даже при 4000 абонентов в базе.
+SHEETS_PER_PAGE = 25
+
+# Ключ сессии, через который админка передаёт сюда выделенных абонентов:
+# в GET-параметры 4000 идентификаторов не помещаются.
+SELECTION_KEY = "receipt_selection"
+
+
+def get_print_queryset(request):
+    """Абоненты для печати с учётом выборки из админки и фильтра в адресе.
+
+    Порядок фиксирован (адрес, затем лицевой счёт) — печатная пачка должна
+    совпадать с маршрутом разноски и быть воспроизводимой между запусками.
+    """
+    queryset = UserModel.objects.order_by("address", "ls")
+
+    if request.GET.get("src") == "selection":
+        queryset = queryset.filter(pk__in=request.session.get(SELECTION_KEY) or [])
+
+    search = (request.GET.get("q") or "").strip()
+    if search:
+        queryset = queryset.filter(
+            Q(address__icontains=search)
+            | Q(ls__icontains=search)
+            | Q(fio__icontains=search)
+        )
+
+    return queryset
+
+
+def _page_query(request, page_number):
+    params = request.GET.copy()
+    params["page"] = page_number
+    return params.urlencode()
 
 
 def product_detail(request):
-    receipts = []
-    receipts += UserModel.objects.all()
-    date = datetime.now()
-    for i in receipts:
-        ls_numeric = ''.join(filter(str.isdigit, i.ls))
-        i.barcode = f'http://127.0.0.1:8000/media/images/barcode_{ls_numeric}.png'
-        i.rate_sum = round(i.rate_sum, 1)
-        i.last_dept = round(i.last_dept, 1)
-        i.date = f"{months[date.month]} {date.year} г."
-        i.total = round(i.current_dept, 1)
-        previous_month, _ = get_previous_month(date)
-        i.current_date = f"на 1-е {months[date.month]}"
-        i.previous_date = f"на 1-е {months[previous_month]}"
-        if i.saldo < 0:
-            i.saldo = 0.0
-    return render(request, "receipt.html", context={'receipts': receipts})
-    
+    """HTML-превью квитанций: постранично, по 4 штуки на лист A4."""
+    queryset = get_print_queryset(request)
+    paginator = Paginator(queryset, SHEETS_PER_PAGE * receipts_lib.PER_SHEET)
+    page = paginator.get_page(request.GET.get("page"))
 
+    pdf_params = request.GET.copy()
+    pdf_params.pop("page", None)
+    pdf_query = pdf_params.urlencode()
+
+    html = receipts_lib.render_sheets_html(
+        page.object_list,
+        total_count=paginator.count,
+        page_number=page.number,
+        num_pages=paginator.num_pages,
+        has_prev=page.has_previous(),
+        has_next=page.has_next(),
+        prev_query=_page_query(request, page.previous_page_number() if page.has_previous() else 1),
+        next_query=_page_query(request, page.next_page_number() if page.has_next() else paginator.num_pages),
+        pdf_url=reverse("receipts_pdf") + (f"?{pdf_query}" if pdf_query else ""),
+    )
+    return HttpResponse(html)
+
+
+def receipts_pdf(request):
+    """Готовый PDF: раскладка не зависит от настроек браузера и принтера."""
+    queryset = get_print_queryset(request)
+    date = datetime.now()
+
+    try:
+        pdf = receipts_lib.render_pdf(
+            queryset, date=date, base_url=request.build_absolute_uri("/")
+        )
+    except receipts_lib.PdfBackendUnavailable as exc:
+        return HttpResponse(
+            "Генерация PDF недоступна: WeasyPrint не установлен или ему не хватает "
+            f"системных библиотек ({exc}). Пересоберите образ командой "
+            "`docker compose build web` — либо печатайте из HTML-превью.",
+            status=501,
+            content_type="text/plain; charset=utf-8",
+        )
+
+    response = HttpResponse(pdf, content_type="application/pdf")
+    response["Content-Disposition"] = (
+        f'attachment; filename="{receipts_lib.pdf_filename(date)}"'
+    )
+    return response

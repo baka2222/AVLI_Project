@@ -1,0 +1,189 @@
+{% load receipt_extras %}
+{# Вся раскладка на таблицах: WeasyPrint не поддерживает flex-gap и           #}
+{# margin:auto во флексе, из-за чего соседние поля слипались. Таблицы         #}
+{# одинаково ведут себя и в браузере, и в PDF.                               #}
+<div class="receipt">
+
+    <section class="notice">
+        <table class="head head--notice">
+            <colgroup><col style="width: 32mm"><col><col style="width: 46mm"></colgroup>
+            <tr>
+                <td><span class="stamp-box">СЧЕТ-ИЗВЕЩЕНИЕ</span></td>
+                <td class="pad-l"><span class="ls">{{ r.ls }}</span><span class="period">{{ r.period }}</span></td>
+                <td rowspan="2" class="bc-cell">{{ r.barcode }}</td>
+            </tr>
+            <tr>
+                <td class="org">{{ company_name }}</td>
+                <td class="pad-l"><span class="clip fio">{{ r.fio }}</span></td>
+            </tr>
+        </table>
+
+        <table class="grid grid--notice">
+            <colgroup><col style="width: 28%"><col span="7" style="width: 10.28%"></colgroup>
+            <tr class="th">
+                <td class="c-label"></td>
+                <td>Долг</td><td>Предопл.</td><td>Начислено</td><td>Оплачено</td>
+                <td>Долг</td><td>Предопл.</td><td>Льгота</td>
+            </tr>
+            <tr class="tv">
+                <td class="c-label c-total">Итого</td>
+                <td>{{ r.last_dept|money }}</td>
+                <td>{{ r.last_prepayment|money }}</td>
+                <td>{{ r.charged|money }}</td>
+                <td>{{ r.last_payment|money }}</td>
+                <td>{{ r.total|money }}</td>
+                <td>{{ r.current_prepayment|money }}</td>
+                <td>{{ 0|money }}</td>
+            </tr>
+        </table>
+
+        <table class="line line--service">
+            <colgroup><col style="width: 40mm"><col></colgroup>
+            <tr>
+                <td>Сод.и рем.мест общ.поль-я</td>
+                <td><span class="service-sum">{{ r.total|money }}</span></td>
+            </tr>
+        </table>
+
+        <table class="line line--pay">
+            <colgroup>
+                <col style="width: 26%"><col style="width: 19%">
+                <col style="width: 19%"><col style="width: 36%">
+            </colgroup>
+            <tr>
+                <td>К оплате <b>{{ r.total|money }}</b></td>
+                <td>НсП <b>{{ 0|money }}</b></td>
+                <td>Пени <b>{{ 0|money }}</b></td>
+                <td class="right">Итого к оплате: <b class="big">{{ r.total|money }}</b></td>
+            </tr>
+        </table>
+
+        <table class="line line--meta">
+            <colgroup>
+                <col style="width: 7mm"><col style="width: 24mm">
+                <col><col style="width: 30mm">
+            </colgroup>
+            <tr>
+                <td>{{ company_line_no }}</td>
+                <td>{{ company_district }}</td>
+                <td class="fill"></td>
+                <td class="right">{{ r.printed_at }}</td>
+            </tr>
+        </table>
+    </section>
+
+    <div class="cut"></div>
+
+    <section class="bill">
+        <table class="head head--bill">
+            <colgroup><col style="width: 34mm"><col></colgroup>
+            <tr>
+                <td><span class="stamp-box stamp-box--closed">СЧЕТ-КВИТАНЦИЯ</span></td>
+                <td rowspan="2" class="title">Расчет платежа за содержание и ремонт мест<br>общего пользования жилого дома</td>
+            </tr>
+            <tr>
+                <td><span class="brand">АВЛИ</span></td>
+            </tr>
+            <tr>
+                <td rowspan="2" class="org">{{ company_name }}</td>
+                <td class="pad-l">
+                    <table class="pair">
+                        <colgroup><col style="width: 26mm"><col></colgroup>
+                        <tr>
+                            <td><span class="period">{{ r.period }}</span></td>
+                            <td><span class="clip address">{{ r.address }}</span></td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+            <tr>
+                <td class="pad-l">
+                    <table class="pair">
+                        <colgroup><col style="width: 26mm"><col></colgroup>
+                        <tr>
+                            <td><span class="ls">{{ r.ls }}</span></td>
+                            <td><span class="clip fio">{{ r.fio }}</span></td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+
+        <table class="line line--contacts">
+            <tr>
+                <td>{{ company_contacts }}</td>
+                <td class="right">Общая площадь {{ r.area|num }}</td>
+            </tr>
+        </table>
+
+        <table class="grid grid--bill">
+            <colgroup>
+                <col style="width: 25%"><col style="width: 7%">
+                <col style="width: 9.5%"><col style="width: 9.5%">
+                <col style="width: 11%"><col style="width: 11%">
+                <col style="width: 9.5%"><col style="width: 9.5%">
+                <col style="width: 8%">
+            </colgroup>
+            <tr class="th">
+                <td rowspan="2" class="c-label">Вид платежа</td>
+                <td rowspan="2">Тариф</td>
+                <td>Долг</td><td>Предопл.</td>
+                <td rowspan="2">Начислено</td>
+                <td rowspan="2">Оплачено</td>
+                <td>Долг</td><td>Предопл.</td>
+                <td rowspan="2">Льгота</td>
+            </tr>
+            <tr class="th">
+                <td colspan="2" class="c-when">{{ r.previous_date }}</td>
+                <td colspan="2" class="c-when">{{ r.current_date }}</td>
+            </tr>
+            <tr class="tv">
+                <td class="c-label c-service">Сод.и рем.мест общ.поль-я</td>
+                <td>{{ r.rate|num }}</td>
+                <td>{{ r.last_dept|money }}</td>
+                <td>{{ r.last_prepayment|money }}</td>
+                <td>{{ r.charged|money }}</td>
+                <td>{{ r.last_payment|money }}</td>
+                <td>{{ r.total|money }}</td>
+                <td>{{ r.current_prepayment|money }}</td>
+                <td>{{ 0|money }}</td>
+            </tr>
+            <tr class="tv tv--total">
+                <td class="c-label c-total">Итого</td>
+                <td></td>
+                <td>{{ r.last_dept|money }}</td>
+                <td>{{ r.last_prepayment|money }}</td>
+                <td>{{ r.charged|money }}</td>
+                <td>{{ r.last_payment|money }}</td>
+                <td>{{ r.total|money }}</td>
+                <td>{{ r.current_prepayment|money }}</td>
+                <td>{{ 0|money }}</td>
+            </tr>
+        </table>
+
+        <table class="foot">
+            <colgroup><col style="width: 39mm"><col style="width: 48mm"><col></colgroup>
+            <tr>
+                <td>
+                    <table class="box box--credits">
+                        <tr><td>Оплачено</td><td class="right">{{ 0|money }}</td></tr>
+                        <tr><td>Субсидия</td><td class="right">{{ 0|money }}</td></tr>
+                        <tr><td>Льгота</td><td class="right">{{ 0|money }}</td></tr>
+                    </table>
+                </td>
+                <td>
+                    <table class="box box--due">
+                        <tr class="th"><td>К оплате</td><td>НсП</td><td>Пени</td></tr>
+                        <tr class="tv"><td>{{ r.total|money }}</td><td>{{ 0|money }}</td><td>{{ 0|money }}</td></tr>
+                    </table>
+                </td>
+                <td class="grand">Итого к оплате:<br><b>{{ r.total|money }}</b></td>
+            </tr>
+        </table>
+
+        <div class="accept">ПРИНЯТО к оплате <span class="sign"></span> владелец квартиры</div>
+
+        <div class="notice-text"><b>Внимание !</b> Оплата принимается во всех почтовых отделениях связи и Терминалах QuickPay г. Бишкек</div>
+    </section>
+
+</div>

@@ -1,0 +1,27 @@
+{# Памятка по порядку месячных операций. Включается в оба списка. #}
+<style>
+.avli-help{border:1px solid #d7c9a7;background:#fffdf5;border-radius:6px;padding:14px 18px;margin:0 0 18px}
+.avli-help h2{margin:0 0 10px;font-size:15px;color:#5a4a1f}
+.avli-help ol{margin:0;padding-left:22px}
+.avli-help li{margin:5px 0;line-height:1.5}
+.avli-help .warn{margin-top:10px;padding:8px 12px;background:#fdecea;border-left:3px solid #d9534f;border-radius:3px}
+.avli-help code{background:#eee;padding:1px 5px;border-radius:3px}
+</style>
+<div class="avli-help">
+    <h2>Порядок работы в течение месяца</h2>
+    <ol>
+        <li><b>Шаг 1 — в течение месяца:</b> загружайте реестры банков в разделе
+            <a href="{% url 'admin:users_app_paymentmodel_add' %}">Платежи → Добавить</a>.
+            Сальдо и графа «Оплачено» обновятся сами.</li>
+        <li><b>Шаг 2 — в начале следующего месяца:</b> в разделе «Абоненты» выделите нужных
+            и выполните действие «Квитанции: скачать PDF» или «открыть предпросмотр».</li>
+        <li><b>Шаг 3 — только после печати:</b> действие
+            «Начислить за новый месяц». Оно переносит остатки на начало нового периода,
+            обнуляет графу «Оплачено» и начисляет тариф.</li>
+    </ol>
+    <div class="warn">
+        <b>Важно:</b> печатайте квитанции <u>до</u> начисления за новый месяц. Если начислить раньше,
+        на квитанции попадут цифры уже нового периода. Начисление, выполненное дважды,
+        спишет тариф два раза.
+    </div>
+</div>
