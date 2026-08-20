@@ -32,6 +32,14 @@ SECRET_KEY = env('SECRET_KEY', default='django-insecure-change-me-in-production'
 DEBUG = env.bool('DEBUG')
 
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
+
+# Telegram-бот и docker-healthcheck обращаются к контейнеру напрямую, минуя
+# nginx: в заголовке Host у них стоит имя сервиса из docker-compose и loopback.
+# Держать эти значения в ALLOWED_HOSTS вручную нельзя — про них забывают, а
+# Django отвечает 400 DisallowedHost, и бот показывает «Проверьте формат
+# лицевого счёта»: ошибку, к введённому номеру отношения не имеющую.
+INTERNAL_HOSTS = env.list('INTERNAL_HOSTS', default=['django', 'localhost', '127.0.0.1'])
+ALLOWED_HOSTS += [host for host in INTERNAL_HOSTS if host not in ALLOWED_HOSTS]
 CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
 
 

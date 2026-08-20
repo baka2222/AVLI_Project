@@ -110,6 +110,10 @@ async def lookup(message: Message, bot: Bot):
         await message.answer(account_message(payload["account"]))
     elif status == 404:
         await message.answer("Лицевой счёт не найден. Проверьте номер и отправьте его ещё раз.")
+    elif status == 400 and payload.get("error") == "bad_response":
+        # Ответ не разобрался как JSON — значит отвечал не наш обработчик
+        # (например, страница DisallowedHost). Винить ввод пользователя нельзя.
+        await message.answer("Сервис отвечает некорректно. Сообщите администратору.")
     elif status == 400:
         await message.answer(escape(payload.get("message") or "Проверьте формат лицевого счёта."))
     elif status == 429:
