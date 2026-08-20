@@ -1,20 +1,24 @@
 from datetime import datetime
+from io import BytesIO
 import json
 import secrets
 
 from django.conf import settings
+from django.contrib.admin.views.decorators import staff_member_required
 from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from . import receipts as receipts_lib
-from .models import UserModel
+from . import reports as reports_lib
+from .models import House, UserModel
 from .public_accounts import (
     AccountNotFound,
     InvalidAccountNumber,
@@ -206,5 +210,119 @@ def receipts_pdf(request):
     response = HttpResponse(pdf, content_type="application/pdf")
     response["Content-Disposition"] = (
         f'attachment; filename="{receipts_lib.pdf_filename(date)}"'
+    )
+    return response
+
+
+# ----------------------------- своды для бухгалтерии -----------------------------
+# Отчёты закрыты правами персонала: это финансовые данные всех жильцов сразу.
+
+def _report_params(request):
+    """Фильтры свода из адресной строки: период, дом, режим, только должники."""
+    year, month = reports_lib.latest_period()
+    if year is None:
+        # Архива ещё нет — показываем прошлый месяц, он же будет первым закрытым.
+        month, year = receipts_lib.previous_month(datetime.now())
+
+    raw_period = (request.GET.get("period") or "").strip()
+    if raw_period:
+        try:
+            raw_year, raw_month = raw_period.split("-")
+            year, month = int(raw_year), int(raw_month)
+        except (TypeError, ValueError):
+            pass
+
+    house = None
+    raw_house = (request.GET.get("house") or "").strip()
+    if raw_house.isdigit():
+        house = House.objects.filter(pk=int(raw_house)).first()
+
+    return {
+        "year": year,
+        "month": month,
+        "house": house,
+        "mode": request.GET.get("mode") or reports_lib.MODE_HOUSES,
+        "only_debtors": request.GET.get("debtors") in ("1", "on", "true"),
+    }
+
+
+def _report_context(request, report):
+    """Общий контекст шаблона свода: сам отчёт плюс наполнение фильтров."""
+    periods = reports_lib.available_periods()
+    selected = (report["year"], report["month"])
+    if selected not in periods:
+        periods = [selected] + periods
+
+    query = request.GET.copy()
+    query.pop("page", None)
+    suffix = f"?{query.urlencode()}" if query else ""
+
+    return {
+        "report": report,
+        "rows": reports_lib.table_rows(report),
+        "period_choices": [
+            (f"{year}-{month}", reports_lib.period_label(year, month))
+            for year, month in periods
+        ],
+        "selected_period": f"{report['year']}-{report['month']}",
+        "houses": reports_lib.available_houses(),
+        "selected_house_id": report["house"].pk if report["house"] else None,
+        "pdf_url": reverse("monthly_report_pdf") + suffix,
+        "excel_url": reverse("monthly_report_excel") + suffix,
+        "admin_url": reverse("admin:users_app_periodsnapshot_changelist"),
+        "company_name": receipts_lib.COMPANY_NAME,
+        "company_contacts": receipts_lib.COMPANY_CONTACTS,
+        "printed_at": datetime.now().strftime("%d.%m.%Y %H:%M"),
+    }
+
+
+@staff_member_required
+def monthly_report(request):
+    """Свод за месяц: по домам целиком либо по абонентам одного дома."""
+    report = reports_lib.build_report(**_report_params(request))
+    return render(request, "reports/monthly.html", _report_context(request, report))
+
+
+@staff_member_required
+def monthly_report_pdf(request):
+    """Тот же свод в PDF — раскладка не зависит от браузера и принтера."""
+    report = reports_lib.build_report(**_report_params(request))
+    context = _report_context(request, report)
+    context["pdf"] = True
+    html = render_to_string("reports/monthly.html", context, request=request)
+
+    try:
+        pdf = receipts_lib.html_to_pdf(html, base_url=request.build_absolute_uri("/"))
+    except receipts_lib.PdfBackendUnavailable as exc:
+        return HttpResponse(
+            "Генерация PDF недоступна: WeasyPrint не установлен или ему не хватает "
+            f"системных библиотек ({exc}). Пересоберите образ командой "
+            "`docker compose build web` — либо печатайте свод из браузера.",
+            status=501,
+            content_type="text/plain; charset=utf-8",
+        )
+
+    response = HttpResponse(pdf, content_type="application/pdf")
+    response["Content-Disposition"] = (
+        f'attachment; filename="{reports_lib.report_filename(report, "pdf")}"'
+    )
+    return response
+
+
+@staff_member_required
+def monthly_report_excel(request):
+    """Тот же свод в Excel — для дальнейшей работы бухгалтерии."""
+    report = reports_lib.build_report(**_report_params(request))
+
+    buffer = BytesIO()
+    reports_lib.workbook_for(report).save(buffer)
+    buffer.seek(0)
+
+    response = HttpResponse(
+        buffer,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = (
+        f'attachment; filename="{reports_lib.report_filename(report, "xlsx")}"'
     )
     return response

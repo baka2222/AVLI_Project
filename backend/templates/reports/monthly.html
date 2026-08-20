@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>{{ report.title }} — {{ report.period }}</title>
+<style>
+/* --------------------------------------------------------------------------
+   Свод за месяц. Лист A4 альбомный — тот же формат, что у бумажной формы
+   бухгалтерии: 12 денежных граф в книжную ориентацию не помещаются.
+   Панель фильтров скрыта и при печати, и в PDF: в документ она не попадает.
+   -------------------------------------------------------------------------- */
+@page { size: A4 landscape; margin: 8mm; }
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: #f4f4f4;
+    color: #000;
+    font-family: "Times New Roman", "Liberation Serif", "DejaVu Serif", Times, serif;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}
+
+.controls {
+    background: #fff;
+    border-bottom: 1px solid #ccc;
+    padding: 12px 18px;
+    font-family: Arial, "Segoe UI", sans-serif;
+    font-size: 13px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    align-items: flex-end;
+}
+.controls label { display: block; font-size: 11px; color: #555; margin-bottom: 3px; }
+.controls select, .controls button, .controls a.btn {
+    font: inherit;
+    padding: 5px 10px;
+    border: 1px solid #aaa;
+    border-radius: 4px;
+    background: #fff;
+    color: #000;
+    text-decoration: none;
+}
+.controls button, .controls a.btn { cursor: pointer; }
+.controls button.primary { background: #417690; border-color: #417690; color: #fff; }
+.controls .check { display: flex; align-items: center; gap: 5px; padding-bottom: 6px; }
+.controls .spacer { flex: 1 1 auto; }
+
+.doc {
+    background: #fff;
+    margin: 14px auto;
+    padding: 8mm;
+    width: 297mm;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .25);
+}
+
+.doc-head { margin-bottom: 8px; }
+.doc-head .company { font-size: 11pt; font-weight: bold; }
+.doc-head h1 { font-size: 13pt; margin: 4px 0 2px; }
+.doc-head .sub { font-size: 10pt; }
+
+table.report {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8pt;
+    table-layout: fixed;
+}
+table.report th, table.report td {
+    border: 1px solid #000;
+    padding: 2px 4px;
+    /* Длинные ФИО и адреса не должны раздвигать таблицу за край листа. */
+    overflow-wrap: anywhere;
+}
+table.report th { text-align: center; vertical-align: middle; font-weight: bold; }
+table.report td.num { text-align: right; white-space: nowrap; }
+table.report td.txt { text-align: left; }
+/* Шапка повторяется на каждом листе — иначе со второй страницы не понять,
+   какая графа где. */
+table.report thead { display: table-header-group; }
+table.report tr { page-break-inside: avoid; break-inside: avoid; }
+table.report tr.total td { font-weight: bold; background: #f0f0f0; }
+table.report tr.total td.txt { text-align: right; }
+
+.empty { padding: 24px; text-align: center; font-size: 11pt; }
+.foot { margin-top: 8px; font-size: 8pt; display: flex; justify-content: space-between; }
+
+@media print {
+    html, body { background: #fff; }
+    .controls { display: none; }
+    .doc { margin: 0; padding: 0; width: auto; box-shadow: none; }
+}
+</style>
+</head>
+<body>
+
+{% if not pdf %}
+<form class="controls" method="get">
+    <div>
+        <label for="period">Период</label>
+        <select name="period" id="period">
+            {% for value, title in period_choices %}
+            <option value="{{ value }}" {% if value == selected_period %}selected{% endif %}>{{ title }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label for="house">Дом</label>
+        <select name="house" id="house">
+            <option value="">Все дома</option>
+            {% for house in houses %}
+            <option value="{{ house.pk }}" {% if house.pk == selected_house_id %}selected{% endif %}>{{ house }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label for="mode">Показать</label>
+        <select name="mode" id="mode">
+            <option value="houses" {% if report.mode == 'houses' %}selected{% endif %}>Свод по домам</option>
+            <option value="subscribers" {% if report.mode == 'subscribers' %}selected{% endif %}>Расшифровку по абонентам</option>
+        </select>
+    </div>
+    <div class="check">
+        <input type="checkbox" name="debtors" value="1" id="debtors" {% if report.only_debtors %}checked{% endif %}>
+        <label for="debtors" style="margin:0">Только должники</label>
+    </div>
+    <button type="submit" class="primary">Показать</button>
+    <div class="spacer"></div>
+    <button type="button" class="btn" onclick="window.print()">Печать</button>
+    <a class="btn" href="{{ pdf_url }}">Скачать PDF</a>
+    <a class="btn" href="{{ excel_url }}">Скачать Excel</a>
+    <a class="btn" href="{{ admin_url }}">В админку</a>
+</form>
+{% endif %}
+
+<div class="doc">
+    <div class="doc-head">
+        <div class="company">{{ company_name }}</div>
+        <h1>{{ report.title }} за {{ report.period }}</h1>
+        <div class="sub">
+            {% if report.house %}Дом: {{ report.house }}{% else %}Все дома{% endif %}
+            {% if report.only_debtors %} · только должники{% endif %}
+            · лицевых счетов: {{ report.totals.accounts }}
+        </div>
+    </div>
+
+    {% if report.is_empty %}
+        <div class="empty">
+            За {{ report.period }} архив не найден.
+            {% if report.house %}Возможно, по этому дому нет абонентов.{% endif %}
+        </div>
+    {% else %}
+    <table class="report">
+        <colgroup>
+            {% for key, title in report.leading_columns %}<col style="width:{% if key == 'label' %}17%{% elif key == 'fio' %}14%{% elif key == 'ls' %}7%{% else %}4%{% endif %}">{% endfor %}
+            {% for field in report.money_fields %}<col>{% endfor %}
+            <col style="width:5%">
+        </colgroup>
+        <thead>
+            <tr>
+                {% for key, title in report.leading_columns %}<th rowspan="2">{{ title }}</th>{% endfor %}
+                {% for group, columns in report.column_groups %}
+                    {% if columns|length > 1 %}
+                        <th colspan="{{ columns|length }}">{{ group }}</th>
+                    {% else %}
+                        <th rowspan="2">{{ group }}</th>
+                    {% endif %}
+                {% endfor %}
+                <th rowspan="2">Вид ком. услуг</th>
+            </tr>
+            <tr>
+                {% for group, columns in report.column_groups %}
+                    {% if columns|length > 1 %}
+                        {% for field, subtitle in columns %}<th>{{ subtitle }}</th>{% endfor %}
+                    {% endif %}
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            <tr {% if row.is_total %}class="total"{% endif %}>
+                {% for cell in row.cells %}<td class="{{ cell.align }}">{{ cell.value }}</td>{% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <div class="foot">
+        <span>{{ company_contacts }}</span>
+        <span>Напечатано: {{ printed_at }}</span>
+    </div>
+</div>
+
+</body>
+</html>

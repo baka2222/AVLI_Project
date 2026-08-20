@@ -5,6 +5,7 @@ JAZZMIN_SETTINGS = {
     "site_header": "АВЛИ",
     "topmenu_links": [
         {"name": "Печать квитанций", "url": "/receipts", "permissions": ["auth.view_user"]},
+        {"name": "Свод за месяц", "url": "/reports/monthly", "permissions": ["auth.view_user"]},
     ],
 
 }

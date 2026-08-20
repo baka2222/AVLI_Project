@@ -6,8 +6,10 @@ import barcode
 from django.db import transaction
 from datetime import datetime
 import os
+import re
 
-from .receipts import barcode_payload, digits
+from .addresses import format_address
+from .receipts import MONTHS, barcode_payload, digits
 
 
 # Даты платежей приходят от четырёх банков в трёх разных форматах
@@ -38,6 +40,68 @@ def normalize_payment_date(value):
     return text
 
 
+# Вид коммунальной услуги в отчётности: компания обслуживает жилые дома,
+# услуга одна — техническое обслуживание.
+DEFAULT_SERVICE_TYPE = "ТО"
+
+
+class House(models.Model):
+    """Дом — справочник.
+
+    Раньше дом жил внутри строки адреса абонента, и одна улица разъезжалась на
+    несколько написаний («ул Байтик-Батыра 6» и «ул Байтик-Баатыра дом 9»).
+    Свод по домам из такого адреса собрать было нельзя. Теперь дом — отдельная
+    запись: фильтр в админке становится выпадающим списком, а группировка
+    отчёта — точной.
+    """
+
+    street = models.CharField(max_length=120, verbose_name='Улица / микрорайон')
+    number = models.CharField(max_length=20, verbose_name='Номер дома')
+    # Сортировка по строке ставит «дом 10» перед «дом 9». Отдельное числовое
+    # поле держит дома в том порядке, в котором их читает человек.
+    number_order = models.PositiveIntegerField(default=0, editable=False)
+    service_type = models.CharField(
+        max_length=20, default=DEFAULT_SERVICE_TYPE, verbose_name='Вид ком. услуг',
+        help_text='Печатается в последней графе свода.',
+    )
+
+    @property
+    def title(self):
+        if self.street and self.number:
+            return f'{self.street} дом {self.number}'
+        return self.street or self.number
+
+    def save(self, *args, **kwargs):
+        self.street = (self.street or '').strip()
+        self.number = (self.number or '').strip()
+        leading = re.match(r'\d+', self.number)
+        self.number_order = int(leading.group()) if leading else 0
+        super().save(*args, **kwargs)
+        # Адрес абонента — производное поле, и переименование дома в справочнике
+        # обязано доехать до квитанций. bulk_update, а не save(): полное
+        # сохранение абонента перерисовывает штрихкод, а он тут ни при чём.
+        self.refresh_subscriber_addresses()
+
+    def refresh_subscriber_addresses(self):
+        subscribers = list(self.subscribers.all())
+        for subscriber in subscribers:
+            subscriber.address = format_address(self, subscriber.apartment)
+        if subscribers:
+            UserModel.objects.bulk_update(subscribers, ['address'])
+        return len(subscribers)
+
+    def __str__(self):
+        return self.title
+
+    class Meta:
+        verbose_name = 'Дом'
+        verbose_name_plural = 'Дома'
+        ordering = ('street', 'number_order', 'number')
+        constraints = [
+            models.UniqueConstraint(fields=('street', 'number'), name='unique_house'),
+        ]
+
+
 class UserModel(models.Model):
     """Абонент.
 
@@ -61,6 +125,11 @@ class UserModel(models.Model):
                   'Именно она печатается в графе «Начислено».',
     )
     address = models.TextField(verbose_name='Адрес', max_length=200, blank=False, null=False)
+    house = models.ForeignKey(
+        House, on_delete=models.PROTECT, related_name='subscribers',
+        null=True, blank=True, verbose_name='Дом',
+    )
+    apartment = models.CharField(max_length=20, blank=True, default='', verbose_name='Квартира')
     saldo = models.FloatField(
         verbose_name='Сальдо',
         default=0,
@@ -100,6 +169,12 @@ class UserModel(models.Model):
     def save(self, *args, **kwargs):
         # Рассчитать сумму по тарифу
         self.rate_sum = round((self.area or 0.0) * (self.rate or 0.0), 2)
+
+        # Когда дом выбран, адрес собирается из справочника: две записи одного
+        # дома с разным написанием улицы сломали бы свод по домам.
+        self.apartment = (self.apartment or '').strip()
+        if self.house_id:
+            self.address = format_address(self.house, self.apartment)
 
         self._sync_balance()
 
@@ -211,3 +286,147 @@ class PaymentModel(models.Model):
     class Meta:
         verbose_name = 'Платежи'
         verbose_name_plural = 'Платежи'
+
+
+# Графа «3%» в отчётности бухгалтерии. На сальдо абонента не влияет: это
+# отдельная колонка свода, которую бухгалтер при необходимости правит руками.
+FEE_RATE = 0.03
+
+MONTH_CHOICES = tuple(sorted(MONTHS.items()))
+
+
+class PeriodSnapshot(models.Model):
+    """Архив: расчёты одного абонента за один закрытый месяц.
+
+    Запись создаётся в момент закрытия периода — до того, как
+    `UserModel.start_new_period()` перезапишет графы. Поэтому здесь лежит ровно
+    то, что было напечатано в квитанции за этот месяц.
+
+    ФИО, адрес, площадь и тариф хранятся копией, а не только ссылкой на
+    абонента: через год жилец может переехать, тариф — измениться, а архив
+    обязан показывать прошлое, а не сегодняшнее состояние. По той же причине
+    `subscriber` удаляется в NULL, а не каскадом — удаление абонента не должно
+    стирать историю, по которой бухгалтерия отчитывалась.
+
+    Своды по домам и общий итог считаются из этих строк агрегацией (см.
+    `reports.py`). Отдельной таблицы с итогами по домам нет намеренно: тогда
+    итог и расшифровка по жильцам не могут разойтись между собой.
+
+    Тождество, которое обязано соблюдаться в каждой строке:
+        (кредит - дебет) на конец = (кредит - дебет) на начало
+                                    - начислено КУ + оплачено КУ + возврат
+    Графы «3%», «Перевод» и «Пеня» в него не входят: они справочные и сальдо
+    абонента не двигают.
+    """
+
+    year = models.PositiveSmallIntegerField(verbose_name='Год')
+    month = models.PositiveSmallIntegerField(verbose_name='Месяц', choices=MONTH_CHOICES)
+
+    subscriber = models.ForeignKey(
+        UserModel, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='snapshots', verbose_name='Абонент',
+    )
+    house = models.ForeignKey(
+        House, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='snapshots', verbose_name='Дом',
+    )
+
+    ls = models.CharField(max_length=50, verbose_name='Лицевой счет')
+    fio = models.CharField(max_length=100, verbose_name='ФИО')
+    address = models.CharField(max_length=200, verbose_name='Адрес')
+    apartment = models.CharField(max_length=20, blank=True, default='', verbose_name='Квартира')
+    area = models.FloatField(default=0, verbose_name='Площадь (м2)')
+    rate = models.FloatField(default=0, verbose_name='Тариф (сом / м2)')
+
+    opening_debit = models.FloatField(default=0, verbose_name='Сальдо нач. месяца, дебет')
+    opening_credit = models.FloatField(default=0, verbose_name='Сальдо нач. месяца, кредит')
+
+    charged_ku = models.FloatField(default=0, verbose_name='Начислено, КУ')
+    charged_fee = models.FloatField(default=0, verbose_name='Начислено, 3%')
+
+    paid_ku = models.FloatField(default=0, verbose_name='Оплачено, КУ')
+    paid_fee = models.FloatField(default=0, verbose_name='Оплачено, 3%')
+
+    transfer = models.FloatField(default=0, verbose_name='Перевод')
+    penalty = models.FloatField(default=0, verbose_name='Пеня')
+    refund = models.FloatField(default=0, verbose_name='Возврат')
+
+    closing_debit = models.FloatField(default=0, verbose_name='Сальдо кон. месяца, дебет')
+    closing_credit = models.FloatField(default=0, verbose_name='Сальдо кон. месяца, кредит')
+    overdue = models.FloatField(default=0, verbose_name='Просроченная задолженность')
+
+    service_type = models.CharField(
+        max_length=20, default=DEFAULT_SERVICE_TYPE, verbose_name='Вид ком. услуг')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Записано в архив')
+
+    @staticmethod
+    def overdue_for(closing_debit, charged_ku):
+        """Просроченная задолженность = долг сверх начисления закрытого месяца.
+
+        Считается по каждому абоненту, а не вычитанием из общего итога: у тех,
+        кто заплатил больше начисленного, просрочки нет, и минус по ним не
+        должен уменьшать общую сумму долга по компании.
+        """
+        return round(max(0.0, (closing_debit or 0.0) - (charged_ku or 0.0)), 2)
+
+    @classmethod
+    def capture(cls, user, year, month):
+        """Снимок по текущему — ещё не закрытому — состоянию абонента.
+
+        Вызывать строго до `start_new_period()`: после него графы уже описывают
+        новый месяц.
+        """
+        charged_ku = round(user.period_charge or 0.0, 2)
+        paid_ku = round(user.last_payment or 0.0, 2)
+        closing_debit = round(user.current_dept or 0.0, 2)
+
+        return cls(
+            year=year,
+            month=month,
+            subscriber=user,
+            house=user.house,
+            ls=user.ls,
+            fio=user.fio,
+            address=user.address,
+            apartment=user.apartment,
+            area=user.area or 0.0,
+            rate=user.rate or 0.0,
+            opening_debit=round(user.last_dept or 0.0, 2),
+            opening_credit=round(user.last_prepayment or 0.0, 2),
+            charged_ku=charged_ku,
+            # «3%» — по умолчанию доля от КУ; бухгалтер правит руками в архиве.
+            charged_fee=round(charged_ku * FEE_RATE, 2),
+            paid_ku=paid_ku,
+            paid_fee=round(paid_ku * FEE_RATE, 2),
+            closing_debit=closing_debit,
+            closing_credit=round(user.current_prepayment or 0.0, 2),
+            overdue=cls.overdue_for(closing_debit, charged_ku),
+            service_type=user.house.service_type if user.house_id else DEFAULT_SERVICE_TYPE,
+        )
+
+    def save(self, *args, **kwargs):
+        # Просрочка выводится из уже записанных граф, а не хранится сама по
+        # себе: иначе правка архива оставила бы её от прежних цифр.
+        self.overdue = self.overdue_for(self.closing_debit, self.charged_ku)
+        super().save(*args, **kwargs)
+
+    @property
+    def period_label(self):
+        return f'{MONTHS.get(self.month, self.month)} {self.year} г.'
+
+    def __str__(self):
+        return f'{self.ls} — {self.period_label}'
+
+    class Meta:
+        verbose_name = 'Архив начислений'
+        verbose_name_plural = 'Архив начислений'
+        ordering = ('-year', '-month', 'address', 'ls')
+        indexes = [
+            models.Index(fields=('year', 'month')),
+            models.Index(fields=('year', 'month', 'house')),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=('subscriber', 'year', 'month'), name='unique_snapshot_per_period',
+            ),
+        ]

@@ -24,14 +24,18 @@ services:
     environment:
       DATABASE_HOST: db
       DATABASE_PORT: 5432
+    # Отступ продолжений обязан совпадать с первой строкой: YAML-скаляр `>`
+    # склеивает строки в одну только при равном отступе, а более отступленные
+    # оставляет как есть — тогда gunicorn стартует без аргументов, слушает
+    # дефолтный 127.0.0.1 и nginx получает 502.
     command: >
       sh -c "python manage.py migrate &&
-             python manage.py collectstatic --noinput &&
-             gunicorn backend.wsgi:application
-             --bind 0.0.0.0:8000
-             --workers 2
-             --timeout 120
-             --access-logfile -"
+      python manage.py collectstatic --noinput &&
+      gunicorn backend.wsgi:application
+      --bind 0.0.0.0:8000
+      --workers 2
+      --timeout 120
+      --access-logfile -"
     volumes:
       - static_data:/app/backend/staticfiles
       - media_data:/app/backend/media

@@ -1,12 +1,20 @@
 {% extends "admin/base_site.html" %}
 
 {% block content %}
-<div style="max-width:820px">
-    <h1>Начислить за новый месяц?</h1>
+<div style="max-width:860px">
+    <h1>{% if archive_only %}Записать в архив за месяц?{% else %}Начислить за новый месяц?{% endif %}</h1>
 
+    {% if archive_only %}
+    <div style="border:1px solid #cfe3d4;background:#f6fbf7;border-radius:6px;padding:14px 18px;margin:16px 0">
+        <p style="margin:0">Для {{ total }} выделенных абонент(ов) будет записан снимок текущих
+            расчётов в архив за выбранный месяц. <b>Сальдо и начисления не меняются</b> —
+            действие безопасное, его можно повторить с перезаписью.</p>
+    </div>
+    {% else %}
     <div style="border:1px solid #d9534f;background:#fdecea;border-radius:6px;padding:14px 18px;margin:16px 0">
         <p style="margin:0 0 8px"><b>Действие необратимо.</b> Для {{ total }} выделенных абонент(ов) будет:</p>
         <ul style="margin:0;padding-left:22px">
+            <li>записан снимок закрываемого месяца в архив;</li>
             <li>текущие долг и предоплата перенесены в графы «на начало периода»;</li>
             <li>графа «Оплачено за период» обнулена;</li>
             <li>из сальдо списана сумма по тарифу (площадь × тариф).</li>
@@ -16,33 +24,66 @@
             банков загружены. Повторный запуск спишет тариф второй раз.
         </p>
     </div>
-
-    <p>Будут затронуты (показаны первые {{ users|length }}{% if extra_shown %} из {{ total }}{% endif %}):</p>
-    <table style="border-collapse:collapse;margin-bottom:16px">
-        <tr>
-            <th style="border:1px solid #ccc;padding:4px 10px;text-align:left">Лицевой счет</th>
-            <th style="border:1px solid #ccc;padding:4px 10px;text-align:left">ФИО</th>
-            <th style="border:1px solid #ccc;padding:4px 10px;text-align:right">Сальдо сейчас</th>
-            <th style="border:1px solid #ccc;padding:4px 10px;text-align:right">Тариф к списанию</th>
-        </tr>
-        {% for u in users %}
-        <tr>
-            <td style="border:1px solid #ccc;padding:4px 10px">{{ u.ls }}</td>
-            <td style="border:1px solid #ccc;padding:4px 10px">{{ u.fio }}</td>
-            <td style="border:1px solid #ccc;padding:4px 10px;text-align:right">{{ u.saldo }}</td>
-            <td style="border:1px solid #ccc;padding:4px 10px;text-align:right">{{ u.rate_sum }}</td>
-        </tr>
-        {% endfor %}
-    </table>
-    {% if extra_shown %}<p>…и ещё {{ extra_shown }} абонент(ов).</p>{% endif %}
+    {% endif %}
 
     <form method="post">
         {% csrf_token %}
         {% for pk in selected %}<input type="hidden" name="_selected_action" value="{{ pk }}">{% endfor %}
         <input type="hidden" name="action" value="{{ action_name }}">
         <input type="hidden" name="confirm_period" value="yes">
-        <button type="submit" class="default" style="background:#d9534f;padding:10px 18px">
-            Да, начислить за новый месяц
+
+        <div style="border:1px solid #ccc;border-radius:6px;padding:14px 18px;margin:0 0 16px">
+            <p style="margin:0 0 10px"><b>За какой месяц закрываем период?</b><br>
+                <span style="color:#555;font-size:12px">Именно этим месяцем строка ляжет в архив
+                и попадёт в свод для бухгалтерии. По умолчанию — прошлый месяц.</span></p>
+            <select name="period_month" style="padding:5px">
+                {% for number, name in month_choices %}
+                <option value="{{ number }}" {% if number == default_month %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select>
+            <select name="period_year" style="padding:5px">
+                {% for year in year_choices %}
+                <option value="{{ year }}" {% if year == default_year %}selected{% endif %}>{{ year }}</option>
+                {% endfor %}
+            </select>
+
+            {% if conflicts %}
+            <div style="margin-top:12px;padding:10px 12px;background:#fdecea;border-left:3px solid #d9534f;border-radius:3px">
+                <b>За этот месяц архив уже есть</b> — по {{ conflicts }} абонент(ам).
+                Скорее всего, период уже закрывали{% if not archive_only %}, и повторное начисление
+                спишет тариф второй раз{% endif %}.
+                <label style="display:block;margin-top:8px">
+                    <input type="checkbox" name="overwrite" value="1">
+                    Я понимаю: перезаписать архив за этот месяц{% if not archive_only %} и начислить ещё раз{% endif %}
+                </label>
+            </div>
+            {% endif %}
+        </div>
+
+        <p>Будут затронуты (показаны первые {{ users|length }}{% if extra_shown %} из {{ total }}{% endif %}):</p>
+        <table style="border-collapse:collapse;margin-bottom:16px">
+            <tr>
+                <th style="border:1px solid #ccc;padding:4px 10px;text-align:left">Лицевой счет</th>
+                <th style="border:1px solid #ccc;padding:4px 10px;text-align:left">ФИО</th>
+                <th style="border:1px solid #ccc;padding:4px 10px;text-align:left">Адрес</th>
+                <th style="border:1px solid #ccc;padding:4px 10px;text-align:right">Сальдо сейчас</th>
+                <th style="border:1px solid #ccc;padding:4px 10px;text-align:right">Тариф к списанию</th>
+            </tr>
+            {% for u in users %}
+            <tr>
+                <td style="border:1px solid #ccc;padding:4px 10px">{{ u.ls }}</td>
+                <td style="border:1px solid #ccc;padding:4px 10px">{{ u.fio }}</td>
+                <td style="border:1px solid #ccc;padding:4px 10px">{{ u.address }}</td>
+                <td style="border:1px solid #ccc;padding:4px 10px;text-align:right">{{ u.saldo }}</td>
+                <td style="border:1px solid #ccc;padding:4px 10px;text-align:right">{{ u.rate_sum }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        {% if extra_shown %}<p>…и ещё {{ extra_shown }} абонент(ов).</p>{% endif %}
+
+        <button type="submit" class="default"
+                style="padding:10px 18px{% if not archive_only %};background:#d9534f{% endif %}">
+            {% if archive_only %}Записать в архив{% else %}Да, начислить за новый месяц{% endif %}
         </button>
         <a href="." class="button cancel-link" style="margin-left:12px">Отмена</a>
     </form>

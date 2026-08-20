@@ -56,6 +56,12 @@ def _load_pdf_backend():
     return HTML, PdfWriter
 
 
+def html_to_pdf(html, base_url=None):
+    """HTML -> PDF. Общая точка для квитанций и сводов бухгалтерии."""
+    HTML, _ = _load_pdf_backend()
+    return HTML(string=html, base_url=base_url).write_pdf()
+
+
 def previous_month(date):
     """(номер месяца, год) для месяца, предшествующего `date`."""
     if date.month > 1:
