@@ -3,7 +3,7 @@ import json
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from users_app.models import UserModel
+from users_app.models import CallbackRequest, Service, SiteSettings, UserModel
 from users_app.public_accounts import (
     AccountNotFound,
     InvalidAccountNumber,
@@ -123,3 +123,88 @@ class AccountApiTest(TestCase):
     def test_healthcheck(self):
         response = self.client.get(reverse("healthcheck"))
         self.assertEqual(response.json(), {"status": "ok"})
+
+
+class SiteContentApiTest(TestCase):
+    def setUp(self):
+        Service.objects.all().delete()
+        SiteSettings.objects.all().delete()
+        self.settings = SiteSettings.objects.create(
+            about_text='Текст о компании',
+            address='Бишкек',
+            phone_primary='+996 555 000 000',
+            email='site@example.com',
+            seo_title='АВЛИ — управляющая компания',
+            seo_description='Управление домами в Бишкеке.',
+        )
+        self.service = Service.objects.create(
+            slug='test-service',
+            title='Тестовая услуга',
+            short_description='Краткое описание',
+            description='Полное описание',
+            image_path='/images/services/test.webp',
+            is_featured=True,
+        )
+
+    def test_site_content_contains_public_data(self):
+        response = self.client.get(reverse('site_content_api'))
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload['ok'])
+        self.assertEqual(payload['settings']['address'], 'Бишкек')
+        self.assertEqual(payload['services'][0]['slug'], self.service.slug)
+        self.assertIn('s-maxage=300', response.headers['Cache-Control'])
+
+    def test_service_detail_has_seo_fields(self):
+        response = self.client.get(
+            reverse('site_service_detail_api', kwargs={'slug': self.service.slug}))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['service']['metaTitle'], self.service.title)
+
+    def test_callback_is_saved_for_admin(self):
+        response = self.client.post(
+            reverse('callback_request_api'),
+            data=json.dumps({
+                'name': 'Нурлан',
+                'phone': '+996 555 123 456',
+                'message': 'Нужна консультация',
+                'page': '/uslugi',
+                'privacyAccepted': True,
+            }),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.json()['ok'])
+        self.assertTrue(response.json()['saved'])
+        request_item = CallbackRequest.objects.get()
+        self.assertEqual(response.json()['id'], request_item.pk)
+        self.assertEqual(request_item.phone, '+996 555 123 456')
+        self.assertEqual(request_item.status, 'new')
+
+    def test_callback_honeypot_never_reports_false_success(self):
+        for field_name in ('contactTime', 'company'):
+            with self.subTest(field_name=field_name):
+                response = self.client.post(
+                    reverse('callback_request_api'),
+                    data=json.dumps({
+                        'name': 'Нурлан',
+                        'phone': '+996 555 123 456',
+                        'privacyAccepted': True,
+                        field_name: 'autofilled',
+                    }),
+                    content_type='application/json',
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertFalse(response.json()['ok'])
+                self.assertFalse(response.json()['saved'])
+                self.assertEqual(response.json()['error'], 'invalid_submission')
+                self.assertEqual(CallbackRequest.objects.count(), 0)
+
+    def test_callback_requires_privacy_consent(self):
+        response = self.client.post(
+            reverse('callback_request_api'),
+            data=json.dumps({'phone': '+996 555 123 456'}),
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(CallbackRequest.objects.count(), 0)

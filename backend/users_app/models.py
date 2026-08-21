@@ -430,3 +430,221 @@ class PeriodSnapshot(models.Model):
                 fields=('subscriber', 'year', 'month'), name='unique_snapshot_per_period',
             ),
         ]
+
+
+# ----------------------------- контент публичного сайта -----------------------------
+
+
+class SiteSettings(models.Model):
+    """Единая карточка компании и SEO-настройки публичного сайта."""
+
+    company_name = models.CharField(max_length=120, default='ОсОО «АВЛИ»', verbose_name='Название компании')
+    short_name = models.CharField(max_length=40, default='АВЛИ', verbose_name='Короткое название')
+    tagline = models.CharField(
+        max_length=180,
+        default='Надёжное управление многоквартирными домами в Бишкеке',
+        verbose_name='Слоган',
+    )
+    about_title = models.CharField(
+        max_length=180, default='Надёжный партнёр вашего дома', verbose_name='Заголовок блока «О нас»')
+    about_text = models.TextField(verbose_name='Текст о компании')
+    about_text_secondary = models.TextField(blank=True, verbose_name='Дополнительный текст о компании')
+    mission = models.TextField(blank=True, verbose_name='Миссия')
+    footer_text = models.TextField(blank=True, verbose_name='Текст в подвале')
+
+    address = models.CharField(max_length=240, verbose_name='Адрес')
+    phone_primary = models.CharField(max_length=40, verbose_name='Основной телефон')
+    phone_secondary = models.CharField(max_length=40, blank=True, verbose_name='Дополнительный телефон')
+    email = models.EmailField(verbose_name='Электронная почта')
+    whatsapp_number = models.CharField(
+        max_length=30, blank=True, verbose_name='WhatsApp',
+        help_text='Только цифры с кодом страны, например 996225215740.',
+    )
+    telegram_url = models.URLField(blank=True, verbose_name='Ссылка на Telegram')
+    map_embed_url = models.URLField(blank=True, max_length=1000, verbose_name='Ссылка на карту (embed)')
+
+    seo_title = models.CharField(max_length=180, verbose_name='SEO-заголовок')
+    seo_description = models.CharField(max_length=320, verbose_name='SEO-описание')
+    og_image = models.ImageField(upload_to='site/', blank=True, verbose_name='Изображение для соцсетей')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        # Карточка настроек должна быть одна. Фиксированный PK упрощает чтение
+        # из API и не даёт случайно завести противоречащие друг другу контакты.
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        return None
+
+    def __str__(self):
+        return self.company_name
+
+    class Meta:
+        verbose_name = 'Настройки сайта'
+        verbose_name_plural = 'Настройки сайта'
+
+
+class OrderedPublishedModel(models.Model):
+    """Общие служебные поля для сортируемого контента сайта."""
+
+    sort_order = models.PositiveSmallIntegerField(default=0, verbose_name='Порядок')
+    is_active = models.BooleanField(default=True, verbose_name='Опубликовано')
+
+    class Meta:
+        abstract = True
+
+
+class HeroSlide(OrderedPublishedModel):
+    eyebrow = models.CharField(max_length=80, default='Приветствуем!', verbose_name='Надзаголовок')
+    title = models.CharField(max_length=180, verbose_name='Заголовок')
+    description = models.TextField(verbose_name='Описание')
+    button_text = models.CharField(max_length=80, default='Заказать звонок', verbose_name='Текст кнопки')
+    image = models.ImageField(upload_to='site/hero/', blank=True, verbose_name='Изображение')
+    image_path = models.CharField(
+        max_length=500, blank=True, verbose_name='Резервный путь изображения',
+        help_text='Используется, если файл не загружен. Допустим путь вида /images/hero/slide.jpg.',
+    )
+
+    def __str__(self):
+        return self.title
+
+    class Meta:
+        verbose_name = 'Слайд первого экрана'
+        verbose_name_plural = 'Слайды первого экрана'
+        ordering = ('sort_order', 'pk')
+
+
+class SiteFeature(OrderedPublishedModel):
+    ICON_CHOICES = (
+        ('shield-check', 'Щит'),
+        ('file-chart', 'Отчётность'),
+        ('house-heart', 'Дом и комфорт'),
+        ('hard-hat', 'Подрядчики'),
+    )
+
+    title = models.CharField(max_length=140, verbose_name='Заголовок')
+    description = models.TextField(verbose_name='Описание')
+    icon = models.CharField(max_length=32, choices=ICON_CHOICES, default='shield-check', verbose_name='Иконка')
+
+    def __str__(self):
+        return self.title
+
+    class Meta:
+        verbose_name = 'Преимущество'
+        verbose_name_plural = 'Преимущества'
+        ordering = ('sort_order', 'pk')
+
+
+class SiteMetric(OrderedPublishedModel):
+    ICON_CHOICES = (
+        ('building', 'Дом'),
+        ('users', 'Жители'),
+        ('headphones', 'Поддержка'),
+        ('smile', 'Улыбка'),
+    )
+
+    value = models.CharField(max_length=30, verbose_name='Значение')
+    label = models.CharField(max_length=120, verbose_name='Подпись')
+    icon = models.CharField(max_length=32, choices=ICON_CHOICES, default='building', verbose_name='Иконка')
+
+    def __str__(self):
+        return f'{self.value} — {self.label}'
+
+    class Meta:
+        verbose_name = 'Показатель компании'
+        verbose_name_plural = 'Показатели компании'
+        ordering = ('sort_order', 'pk')
+
+
+class Service(OrderedPublishedModel):
+    CATEGORY_CHOICES = (
+        ('paid', 'Платная услуга'),
+        ('included', 'Входит в обслуживание'),
+    )
+
+    slug = models.SlugField(max_length=180, unique=True, verbose_name='URL-имя')
+    title = models.CharField(max_length=220, verbose_name='Название')
+    short_description = models.TextField(verbose_name='Краткое описание')
+    description = models.TextField(verbose_name='Полное описание')
+    price_label = models.CharField(max_length=80, default='По запросу', verbose_name='Цена')
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='paid', verbose_name='Категория')
+    image = models.ImageField(upload_to='services/', blank=True, verbose_name='Изображение')
+    image_path = models.CharField(
+        max_length=500, blank=True, verbose_name='Резервный путь изображения',
+        help_text='Используется, если файл не загружен.',
+    )
+    is_featured = models.BooleanField(default=False, verbose_name='Показывать на главной')
+    legacy_path = models.CharField(
+        max_length=320, blank=True, verbose_name='Старый URL',
+        help_text='Нужен для постоянного редиректа со старой версии сайта.',
+    )
+    meta_title = models.CharField(max_length=180, blank=True, verbose_name='SEO-заголовок')
+    meta_description = models.CharField(max_length=320, blank=True, verbose_name='SEO-описание')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.title
+
+    class Meta:
+        verbose_name = 'Услуга сайта'
+        verbose_name_plural = 'Услуги сайта'
+        ordering = ('sort_order', 'title')
+
+
+class Testimonial(OrderedPublishedModel):
+    name = models.CharField(max_length=140, verbose_name='Имя')
+    role = models.CharField(max_length=80, default='Житель', verbose_name='Подпись')
+    text = models.TextField(verbose_name='Отзыв')
+    initials = models.CharField(max_length=8, blank=True, verbose_name='Инициалы')
+
+    def save(self, *args, **kwargs):
+        if not self.initials:
+            self.initials = ''.join(part[0] for part in self.name.split()[:2]).upper()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        verbose_name = 'Отзыв'
+        verbose_name_plural = 'Отзывы'
+        ordering = ('sort_order', 'pk')
+
+
+class FrequentlyAskedQuestion(OrderedPublishedModel):
+    question = models.CharField(max_length=260, verbose_name='Вопрос')
+    answer = models.TextField(verbose_name='Ответ')
+
+    def __str__(self):
+        return self.question
+
+    class Meta:
+        verbose_name = 'Вопрос и ответ'
+        verbose_name_plural = 'Вопросы и ответы'
+        ordering = ('sort_order', 'pk')
+
+
+class CallbackRequest(models.Model):
+    STATUS_CHOICES = (
+        ('new', 'Новая'),
+        ('in_progress', 'В работе'),
+        ('done', 'Обработана'),
+        ('spam', 'Спам'),
+    )
+
+    name = models.CharField(max_length=120, blank=True, verbose_name='Имя')
+    phone = models.CharField(max_length=40, verbose_name='Телефон')
+    message = models.TextField(blank=True, verbose_name='Комментарий')
+    page = models.CharField(max_length=320, blank=True, verbose_name='Страница заявки')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new', verbose_name='Статус')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Получена')
+
+    def __str__(self):
+        return f'{self.phone} — {self.created_at:%d.%m.%Y %H:%M}'
+
+    class Meta:
+        verbose_name = 'Заявка с сайта'
+        verbose_name_plural = 'Заявки с сайта'
+        ordering = ('-created_at',)
+        indexes = [models.Index(fields=('status', '-created_at'))]

@@ -61,6 +61,26 @@ services:
       django:
         condition: service_healthy
 
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://avli.kg}
+    restart: unless-stopped
+    environment:
+      BACKEND_INTERNAL_URL: http://django:8000
+      NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://avli.kg}
+    depends_on:
+      django:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -72,6 +92,8 @@ services:
       - media_data:/srv/media:ro
     depends_on:
       django:
+        condition: service_healthy
+      frontend:
         condition: service_healthy
 
 volumes:

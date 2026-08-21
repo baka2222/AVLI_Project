@@ -1,6 +1,7 @@
 from datetime import datetime
 from io import BytesIO
 import json
+import re
 import secrets
 
 from django.conf import settings
@@ -18,7 +19,18 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from . import receipts as receipts_lib
 from . import reports as reports_lib
-from .models import House, UserModel
+from .models import (
+    CallbackRequest,
+    FrequentlyAskedQuestion,
+    HeroSlide,
+    House,
+    Service,
+    SiteFeature,
+    SiteMetric,
+    SiteSettings,
+    Testimonial,
+    UserModel,
+)
 from .public_accounts import (
     AccountNotFound,
     InvalidAccountNumber,
@@ -135,6 +147,216 @@ def account_lookup_api(request):
 @require_GET
 def healthcheck(request):
     return JsonResponse({"status": "ok"})
+
+
+# ----------------------------- API публичного сайта -----------------------------
+
+
+def _published(queryset):
+    return queryset.filter(is_active=True).order_by('sort_order', 'pk')
+
+
+def _image_source(obj, field='image'):
+    image = getattr(obj, field, None)
+    if image:
+        return image.url
+    return getattr(obj, 'image_path', '') or ''
+
+
+def _service_payload(service):
+    return {
+        'slug': service.slug,
+        'title': service.title,
+        'shortDescription': service.short_description,
+        'description': service.description,
+        'priceLabel': service.price_label,
+        'category': service.category,
+        'image': _image_source(service),
+        'isFeatured': service.is_featured,
+        'legacyPath': service.legacy_path,
+        'metaTitle': service.meta_title or service.title,
+        'metaDescription': service.meta_description or service.short_description,
+        'updatedAt': service.updated_at.isoformat(),
+    }
+
+
+def _site_settings_payload(settings_obj):
+    return {
+        'companyName': settings_obj.company_name,
+        'shortName': settings_obj.short_name,
+        'tagline': settings_obj.tagline,
+        'aboutTitle': settings_obj.about_title,
+        'aboutText': settings_obj.about_text,
+        'aboutTextSecondary': settings_obj.about_text_secondary,
+        'mission': settings_obj.mission,
+        'footerText': settings_obj.footer_text,
+        'address': settings_obj.address,
+        'phonePrimary': settings_obj.phone_primary,
+        'phoneSecondary': settings_obj.phone_secondary,
+        'email': settings_obj.email,
+        'whatsappNumber': settings_obj.whatsapp_number,
+        'telegramUrl': settings_obj.telegram_url,
+        'mapEmbedUrl': settings_obj.map_embed_url,
+        'seoTitle': settings_obj.seo_title,
+        'seoDescription': settings_obj.seo_description,
+        'ogImage': settings_obj.og_image.url if settings_obj.og_image else '/images/og-avli.jpg',
+        'updatedAt': settings_obj.updated_at.isoformat(),
+    }
+
+
+@require_GET
+def site_content_api(request):
+    """Контент для Next.js. Только опубликованные записи, без персональных данных."""
+    settings_obj = SiteSettings.objects.first()
+    if settings_obj is None:
+        return JsonResponse({'ok': False, 'error': 'site_not_configured'}, status=503)
+
+    services = list(_published(Service.objects.all()))
+    payload = {
+        'ok': True,
+        'settings': _site_settings_payload(settings_obj),
+        'heroSlides': [
+            {
+                'eyebrow': item.eyebrow,
+                'title': item.title,
+                'description': item.description,
+                'buttonText': item.button_text,
+                'image': _image_source(item),
+            }
+            for item in _published(HeroSlide.objects.all())
+        ],
+        'features': [
+            {'title': item.title, 'description': item.description, 'icon': item.icon}
+            for item in _published(SiteFeature.objects.all())
+        ],
+        'metrics': [
+            {'value': item.value, 'label': item.label, 'icon': item.icon}
+            for item in _published(SiteMetric.objects.all())
+        ],
+        'services': [_service_payload(item) for item in services],
+        'testimonials': [
+            {'name': item.name, 'role': item.role, 'text': item.text, 'initials': item.initials}
+            for item in _published(Testimonial.objects.all())
+        ],
+        'faq': [
+            {'question': item.question, 'answer': item.answer}
+            for item in _published(FrequentlyAskedQuestion.objects.all())
+        ],
+    }
+    response = JsonResponse(payload, json_dumps_params={'ensure_ascii': False})
+    response['Cache-Control'] = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600'
+    return response
+
+
+@require_GET
+def site_services_api(request):
+    services = [_service_payload(item) for item in _published(Service.objects.all())]
+    response = JsonResponse({'ok': True, 'services': services}, json_dumps_params={'ensure_ascii': False})
+    response['Cache-Control'] = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600'
+    return response
+
+
+@require_GET
+def site_service_detail_api(request, slug):
+    service = Service.objects.filter(slug=slug, is_active=True).first()
+    if service is None:
+        return JsonResponse({'ok': False, 'error': 'not_found'}, status=404)
+    response = JsonResponse(
+        {'ok': True, 'service': _service_payload(service)},
+        json_dumps_params={'ensure_ascii': False},
+    )
+    response['Cache-Control'] = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600'
+    return response
+
+
+def _callback_rate_limited(request, limit=5, window=3600):
+    address = request.META.get('HTTP_X_REAL_IP') or request.META.get('REMOTE_ADDR', 'unknown')
+    bucket = int(datetime.now().timestamp() // window)
+    key = f'callback:{address}:{bucket}'
+    if cache.add(key, 1, timeout=window + 60):
+        return False
+    try:
+        return cache.incr(key) > limit
+    except ValueError:
+        cache.set(key, 1, timeout=window + 60)
+        return False
+
+
+@csrf_exempt
+@never_cache
+@require_POST
+def callback_request_api(request):
+    """Принимает заявки с сайта и складывает их в привычную Django-админку."""
+    if _callback_rate_limited(request):
+        return JsonResponse(
+            {'ok': False, 'error': 'rate_limited',
+             'message': 'Слишком много заявок. Позвоните нам или попробуйте позднее.'},
+            status=429,
+        )
+
+    try:
+        content_length = int(request.META.get('CONTENT_LENGTH') or 0)
+    except (TypeError, ValueError):
+        content_length = 0
+    if content_length > 8192:
+        return JsonResponse({'ok': False, 'error': 'payload_too_large'}, status=413)
+
+    try:
+        payload = json.loads(request.body or b'{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'ok': False, 'error': 'invalid_json'}, status=400)
+    if not isinstance(payload, dict):
+        return JsonResponse({'ok': False, 'error': 'invalid_payload'}, status=400)
+
+    # Невидимое для человека поле отсекает простейших спам-ботов без капчи.
+    # Старое имя ``company`` оставлено для уже открытых в браузере страниц.
+    # Важно не возвращать ложный 201: интерфейс может показывать успех только
+    # после фактического создания CallbackRequest.
+    honeypot = payload.get('contactTime') or payload.get('company')
+    if str(honeypot or '').strip():
+        response = JsonResponse(
+            {
+                'ok': False,
+                'saved': False,
+                'error': 'invalid_submission',
+                'message': 'Не удалось отправить заявку. Обновите страницу и попробуйте ещё раз.',
+            },
+            status=400,
+        )
+        response['Cache-Control'] = 'no-store, private'
+        return response
+
+    name = str(payload.get('name') or '').strip()[:120]
+    phone = str(payload.get('phone') or '').strip()
+    message = str(payload.get('message') or '').strip()[:2000]
+    page = str(payload.get('page') or '').strip()[:320]
+    privacy_accepted = payload.get('privacyAccepted') is True
+
+    if not privacy_accepted:
+        return JsonResponse(
+            {'ok': False, 'error': 'privacy_required',
+             'message': 'Подтвердите согласие на обработку контактных данных.'},
+            status=400,
+        )
+    if not re.fullmatch(r'[\d\s+()\-]{7,30}', phone):
+        return JsonResponse(
+            {'ok': False, 'error': 'invalid_phone',
+             'message': 'Проверьте номер телефона и попробуйте ещё раз.'},
+            status=400,
+        )
+
+    request_item = CallbackRequest.objects.create(
+        name=name,
+        phone=phone,
+        message=message,
+        page=page,
+    )
+    response = JsonResponse(
+        {'ok': True, 'saved': True, 'id': request_item.pk},
+        status=201,
+    )
+    response['Cache-Control'] = 'no-store, private'
+    return response
 
 
 def get_print_queryset(request):

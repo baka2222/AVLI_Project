@@ -1,10 +1,24 @@
 from django.contrib import admin
 from django.db import models
-from .models import (House, PaymentModel, PeriodSnapshot, UserModel,
-                     normalize_payment_date)
+from .models import (
+    CallbackRequest,
+    FrequentlyAskedQuestion,
+    HeroSlide,
+    House,
+    PaymentModel,
+    PeriodSnapshot,
+    Service,
+    SiteFeature,
+    SiteMetric,
+    SiteSettings,
+    Testimonial,
+    UserModel,
+    normalize_payment_date,
+)
 from django import forms
 from scripts.read_file import (read_optima, read_pay24, read_quickpay, read_umai)
 import io
+from types import MethodType
 from datetime import datetime
 from django.db import transaction
 from django.http import HttpResponse
@@ -571,3 +585,166 @@ class UserModelAdmin(admin.ModelAdmin):
         archive_period_action,
         save_to_excel_action,
     ]
+
+
+# ----------------------------- редактор публичного сайта -----------------------------
+
+
+@admin.register(SiteSettings)
+class SiteSettingsAdmin(admin.ModelAdmin):
+    fieldsets = (
+        ('Компания', {
+            'fields': ('company_name', 'short_name', 'tagline', 'mission'),
+        }),
+        ('Раздел «О компании»', {
+            'fields': ('about_title', 'about_text', 'about_text_secondary', 'footer_text'),
+        }),
+        ('Контакты', {
+            'fields': ('address', 'phone_primary', 'phone_secondary', 'email',
+                       'whatsapp_number', 'telegram_url'),
+        }),
+        ('SEO и соцсети', {
+            'fields': ('seo_title', 'seo_description', 'og_image'),
+            'description': 'Используется на главной, в Open Graph и schema.org. '
+                           'У отдельных услуг есть собственные SEO-поля.',
+        }),
+    )
+
+    def has_add_permission(self, request):
+        return not SiteSettings.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+class OrderedContentAdmin(admin.ModelAdmin):
+    list_editable = ('sort_order', 'is_active')
+    list_filter = ('is_active',)
+    ordering = ('sort_order', 'pk')
+
+
+@admin.register(HeroSlide)
+class HeroSlideAdmin(OrderedContentAdmin):
+    list_display = ('title', 'button_text', 'sort_order', 'is_active')
+    search_fields = ('title', 'description')
+
+
+@admin.register(SiteFeature)
+class SiteFeatureAdmin(OrderedContentAdmin):
+    list_display = ('title', 'icon', 'sort_order', 'is_active')
+    search_fields = ('title', 'description')
+
+
+@admin.register(SiteMetric)
+class SiteMetricAdmin(OrderedContentAdmin):
+    list_display = ('value', 'label', 'icon', 'sort_order', 'is_active')
+
+
+@admin.register(Service)
+class ServiceAdmin(OrderedContentAdmin):
+    list_display = ('title', 'category', 'price_label', 'is_featured',
+                    'sort_order', 'is_active')
+    list_editable = ('is_featured', 'sort_order', 'is_active')
+    list_filter = ('category', 'is_featured', 'is_active')
+    search_fields = ('title', 'short_description', 'description')
+    prepopulated_fields = {'slug': ('title',)}
+    fieldsets = (
+        ('Услуга', {
+            'fields': ('title', 'slug', 'category', 'price_label',
+                       'short_description', 'description'),
+        }),
+        ('Изображение', {
+            'fields': ('image', 'image_path'),
+        }),
+        ('Публикация', {
+            'fields': ('is_featured', 'is_active', 'sort_order', 'legacy_path'),
+        }),
+        ('SEO', {
+            'fields': ('meta_title', 'meta_description'),
+        }),
+    )
+
+
+@admin.register(Testimonial)
+class TestimonialAdmin(OrderedContentAdmin):
+    list_display = ('name', 'role', 'sort_order', 'is_active')
+    search_fields = ('name', 'text')
+
+
+@admin.register(FrequentlyAskedQuestion)
+class FrequentlyAskedQuestionAdmin(OrderedContentAdmin):
+    list_display = ('question', 'sort_order', 'is_active')
+    search_fields = ('question', 'answer')
+
+
+@admin.register(CallbackRequest)
+class CallbackRequestAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'name', 'phone', 'page', 'status')
+    list_filter = ('status', 'created_at')
+    list_editable = ('status',)
+    search_fields = ('name', 'phone', 'message', 'page')
+    readonly_fields = ('name', 'phone', 'message', 'page', 'created_at')
+    ordering = ('-created_at',)
+
+    def has_add_permission(self, request):
+        return False
+
+
+# Бухгалтерские разделы и редактор сайта живут в одном Django-приложении и
+# используют общие таблицы. Разделяем их только в навигации админки: так старые
+# URL, права доступа, импорты платежей и связи моделей остаются совместимыми.
+ADMIN_NAVIGATION_SECTIONS = (
+    ('subscribers', 'Абоненты', ('UserModel',)),
+    ('charge_archive', 'Архив начислений', ('PeriodSnapshot',)),
+    ('houses', 'Дома', ('House',)),
+    ('payments', 'Платежи', ('PaymentModel',)),
+)
+
+
+def _split_users_app(app_list):
+    result = []
+    other_apps = []
+
+    for app in app_list:
+        if app['app_label'] != 'users_app':
+            other_apps.append(app)
+            continue
+
+        models_by_name = {model['object_name']: model for model in app['models']}
+        for section_label, section_name, model_names in ADMIN_NAVIGATION_SECTIONS:
+            models_for_section = [
+                models_by_name.pop(model_name)
+                for model_name in model_names
+                if model_name in models_by_name
+            ]
+            if models_for_section:
+                result.append({
+                    **app,
+                    'name': section_name,
+                    'app_label': section_label,
+                    'app_url': '',
+                    'models': models_for_section,
+                })
+
+        # Все модели редактора публичного сайта, заявки и будущие CMS-модели
+        # собраны отдельно от расчётной части.
+        if models_by_name:
+            result.append({
+                **app,
+                'name': 'Сайт и заявки',
+                'app_label': 'website',
+                'app_url': '',
+                'models': list(models_by_name.values()),
+            })
+
+    return result + other_apps
+
+
+def _sectioned_get_app_list(admin_site, request, app_label=None):
+    app_list = admin.AdminSite.get_app_list(admin_site, request, app_label)
+    if app_label not in (None, 'users_app'):
+        return app_list
+    return _split_users_app(app_list)
+
+
+admin.site.get_app_list = MethodType(_sectioned_get_app_list, admin.site)
